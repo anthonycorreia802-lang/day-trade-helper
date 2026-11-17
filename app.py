@@ -845,148 +845,178 @@ def render_dashboard():
             help="Projected end-of-day price boundary based on 14-day average volatility."
         )
 
-        left, right = st.columns(2)
-        with left:
-            info_heading("💡 Why this setup?", "A short explanation of which technical checks are supporting or weakening the current signal.", 4)
-            for r in sig["reasons"]:
-                st.markdown(f"- {r}")
+        info_heading("💡 Why this setup?", "A short explanation of which technical checks are supporting or weakening the current signal.", 4)
+        for r in sig["reasons"]:
+            st.markdown(f"- {r}")
 
-            # Beginner Glossary / Dark-Themed Expander
-            with st.expander("👶 Beginner's Guide: What do these terms mean?"):
-                st.markdown("""
+        # Beginner Glossary / Dark-Themed Expander
+        with st.expander("👶 Beginner's Guide: What do these terms mean?"):
+            st.markdown("""
 - **VWAP (Fair Value Line)**: The average price people paid today, weighted by volume. If price is above VWAP, buyers are winning. If below, sellers are winning.
 - **RSI (Momentum Gauge)**: Tells you if a stock has moved too fast. Above 70 means it might be due for a cooldown; below 30 means it might bounce back up.
 - **EMA 9 & EMA 20 (Trend Lines)**: Short-term averages. When the faster line (9) is *above* the slower line (20), the short-term trend is pointing up.
-- **Stop Loss**: Your emergency exit price to limit losses if the trade goes against you.
-- **Take Profit / Target**: The price where you automatically cash out your winnings.
-                """)
+- **Stop Loss**: Your planned exit if price moves against the trade.
+- **Take Profit / Target**: The price where the simulated trade aims to close for a gain.
+            """)
 
-        with right:
-            info_heading("⚡ Quick Trade Execution", "Calculate a position from your account balance and risk limit, review the potential loss and reward, then open a simulated position. No broker order is sent.", 4)
-            is_crypto = ticker.endswith("-USD")
-            unit_digits = price_decimals(price)
-            calc_step = 0.000001 if is_crypto else 0.01
-            calc_format = f"%.{unit_digits}f"
-            default_side = "SHORT" if sig["short_score"] > sig["long_score"] else "LONG"
-            calc_side = st.radio(
-                "Calculator Direction", ["LONG", "SHORT"],
-                index=1 if default_side == "SHORT" else 0,
-                horizontal=True,
-                key=f"quick_calc_side_{ticker}",
-                help="LONG benefits from a rising price. SHORT benefits from a falling price."
-            )
+        # Keep Quick Trade Execution full-width and familiar: automatic levels,
+        # readable risk/size results, then the two paper-trade buttons.
+        st.markdown("---")
+        info_heading(
+            "⚡ Quick Trade Execution",
+            "Automatically calculates entry, stop, target, position size and estimated risk from the current signal and your sidebar account/risk settings. No broker order is sent.",
+            3
+        )
+        is_crypto = ticker.endswith("-USD")
+        auto_digits = price_decimals(price)
+        stop_gap = max(float(sig["stop_dist"]), float(price) * 0.0025, 0.000001)
+        long_ready = sig["long_score"] >= 3 and sig["long_score"] > sig["short_score"]
+        short_ready = sig["short_score"] >= 3 and sig["short_score"] > sig["long_score"]
 
-            suggested_entry = float(sig["ideal_buy"] if sig["side"] == calc_side else price)
-            suggested_gap = max(float(sig["stop_dist"]), price * 0.0025, 0.000001)
-            if calc_side == "LONG":
-                suggested_stop = float(sig["stop"] if sig["side"] == "LONG" else max(0.000001, suggested_entry - suggested_gap))
-                suggested_target = float(sig["ideal_sell"] if sig["side"] == "LONG" else suggested_entry + suggested_gap * rr_ratio)
+        # Automatically select the stronger direction for the displayed plan.
+        # A valid signal supplies its own levels; otherwise show an illustrative
+        # current-price plan while keeping both execution buttons disabled.
+        if long_ready and not short_ready:
+            auto_side = "LONG"
+        elif short_ready and not long_ready:
+            auto_side = "SHORT"
+        else:
+            auto_side = "SHORT" if sig["short_score"] > sig["long_score"] else "LONG"
+
+        if auto_side == "LONG":
+            if sig["side"] == "LONG":
+                auto_entry = float(sig["ideal_buy"])
+                auto_stop = float(sig["stop"])
+                auto_target = float(sig["ideal_sell"])
             else:
-                suggested_stop = float(sig["stop"] if sig["side"] == "SHORT" else suggested_entry + suggested_gap)
-                suggested_target = float(sig["ideal_sell"] if sig["side"] == "SHORT" else max(0.000001, suggested_entry - suggested_gap * rr_ratio))
+                auto_entry = float(price)
+                auto_stop = round(max(0.000001, auto_entry - stop_gap), auto_digits)
+                auto_target = round(auto_entry + stop_gap * rr_ratio, auto_digits)
+        else:
+            if sig["side"] == "SHORT":
+                auto_entry = float(sig["ideal_buy"])
+                auto_stop = float(sig["stop"])
+                auto_target = float(sig["ideal_sell"])
+            else:
+                auto_entry = float(price)
+                auto_stop = round(auto_entry + stop_gap, auto_digits)
+                auto_target = round(max(0.000001, auto_entry - stop_gap * rr_ratio), auto_digits)
 
-            calc1, calc2, calc3 = st.columns(3)
-            calc_entry = calc1.number_input(
-                "Planned Entry ($)", min_value=0.000001, value=round(suggested_entry, unit_digits),
-                step=calc_step, format=calc_format, key=f"quick_calc_entry_{ticker}_{calc_side}",
-                help="The simulated price where this position would open."
-            )
-            calc_stop = calc2.number_input(
-                "Stop Loss ($)", min_value=0.000001, value=round(suggested_stop, unit_digits),
-                step=calc_step, format=calc_format, key=f"quick_calc_stop_{ticker}_{calc_side}",
-                help="The planned exit if price moves against the trade."
-            )
-            calc_target = calc3.number_input(
-                "Take Profit ($)", min_value=0.000001, value=round(suggested_target, unit_digits),
-                step=calc_step, format=calc_format, key=f"quick_calc_target_{ticker}_{calc_side}",
-                help="The planned profit-taking price."
-            )
+        auto_calc = calculate_position_size(
+            st.session_state.account_size,
+            risk_pct,
+            auto_entry,
+            auto_stop,
+            auto_target,
+            is_crypto=is_crypto,
+        )
+        price_fmt = lambda value: f"${float(value):,.{auto_digits}f}"
 
-            calc = calculate_position_size(
-                st.session_state.account_size, risk_pct, calc_entry, calc_stop, calc_target, is_crypto=is_crypto
+        st.caption(
+            f"Automatic {auto_side} plan for **{display_asset_name(ticker)} ({ticker})** · "
+            f"Updates with the latest available quote, technical setup, account size and Risk Per Trade setting."
+        )
+        level1, level2, level3 = st.columns(3)
+        level1.metric("Planned Entry", price_fmt(auto_entry), help="Automatically selected entry level for the stronger technical direction.")
+        level2.metric("Stop Loss", price_fmt(auto_stop), help="Illustrative exit level used to calculate the planned dollar risk.")
+        level3.metric("Take Profit", price_fmt(auto_target), help="Illustrative target used to calculate the potential reward.")
+
+        if auto_calc.get("valid"):
+            qty_text = f"{auto_calc['quantity']:,.6f}" if is_crypto else f"{int(auto_calc['quantity']):,}"
+            result1, result2, result3, result4 = st.columns(4)
+            result1.metric("Position Size", f"{qty_text} {auto_calc['unit']}", help="Automatically calculated quantity. Stocks use whole shares; crypto supports fractional units.")
+            result2.metric("Position Value", f"${auto_calc['position_value']:,.2f}", help="Estimated value of the simulated position at the planned entry.")
+            result3.metric("Estimated Risk", f"-${auto_calc['planned_risk']:,.2f}", help="Estimated loss if the stop is reached, before fees, slippage or execution differences.")
+            result4.metric("Potential Profit", f"+${auto_calc['potential_reward']:,.2f}", help="Estimated gain if the target is reached, before fees and slippage.")
+            st.caption(
+                f"Risk budget: **${auto_calc['risk_budget']:,.2f}** · "
+                f"Reward-to-risk: **{auto_calc['reward_to_risk']:.2f}:1** · "
+                f"Account risk used: **{auto_calc['risk_pct_used']:.2f}%** · "
+                f"Buying-power cap: **{auto_calc['buying_power_cap']:,.6f} {auto_calc['unit']}**"
             )
-            if calc.get("valid") and calc.get("side") != calc_side:
-                calc = {
-                    "valid": False,
-                    "reason": f"These prices describe a {calc.get('side')} setup. For {calc_side}, adjust the stop and target to the correct side of your entry."
-                }
-            if calc.get("valid"):
-                m1, m2, m3, m4, m5 = st.columns(5)
-                m1.metric("Risk Budget", f"${calc['risk_budget']:,.2f}", help="Account size multiplied by the Risk Per Trade setting in the sidebar.")
-                quantity_display = f"{calc['quantity']:,.6f}" if is_crypto else f"{int(calc['quantity']):,}"
-                m2.metric("Position Size", f"{quantity_display} {calc['unit']}", help="Quantity rounded down to fit both the risk budget and account-size buying-power cap.")
-                m3.metric("Position Value", f"${calc['position_value']:,.2f}", help="Entry price multiplied by the calculated quantity.")
-                m4.metric("Estimated Stop Loss", f"-${calc['planned_risk']:,.2f}", help="Estimated loss if the stop is reached, excluding fees, slippage and execution differences.")
-                m5.metric("Potential Profit", f"+${calc['potential_reward']:,.2f}", help="Estimated gain if the target is reached, before fees and slippage.")
-                st.caption(
-                    f"{calc['side']} calculator · Reward/Risk **{calc['reward_to_risk']:.2f}:1** · "
-                    f"Account risk used **{calc['risk_pct_used']:.2f}%** · "
-                    f"Buying-power cap **{calc['buying_power_cap']:,.6f} {calc['unit']}**"
+        else:
+            qty_text = "—"
+            st.warning(auto_calc.get("reason", "The automatic position calculator could not create a valid plan."))
+
+        already_open = any(
+            t.get("ticker") == ticker and t.get("status") == "OPEN"
+            for t in st.session_state.paper_trades
+        )
+        buy_col, short_col = st.columns(2)
+        if already_open:
+            st.info(f"You already have an open paper trade on {ticker}. Close it before opening another.")
+        else:
+            buy_disabled = limit_hit or not auto_calc.get("valid", False) or not long_ready
+            short_disabled = limit_hit or not auto_calc.get("valid", False) or not short_ready
+            if buy_col.button(
+                f"🚀 Paper BUY · {qty_text} {auto_calc.get('unit', 'shares')}",
+                key=f"quick_auto_buy_{ticker}",
+                type="primary",
+                use_container_width=True,
+                disabled=buy_disabled,
+                help="Opens the automatically calculated simulated LONG position when bullish checks are confirmed.",
+            ):
+                st.session_state.paper_trades.append({
+                    "id": str(uuid.uuid4())[:8],
+                    "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
+                    "ticker": ticker,
+                    "side": "LONG",
+                    "entry": float(auto_entry),
+                    "stop": float(auto_stop),
+                    "target": float(auto_target),
+                    "shares": float(auto_calc["quantity"]),
+                    "status": "OPEN",
+                    "exit": None,
+                    "pnl": None,
+                    "notes": f"Automatic Quick Execution · risk budget ${auto_calc['risk_budget']:.2f}",
+                })
+                st.rerun()
+
+            if short_col.button(
+                f"🔻 Paper SHORT · {qty_text} {auto_calc.get('unit', 'shares')}",
+                key=f"quick_auto_short_{ticker}",
+                type="secondary",
+                use_container_width=True,
+                disabled=short_disabled,
+                help="Opens the automatically calculated simulated SHORT position when bearish checks are confirmed.",
+            ):
+                # For a short, stop is above entry and target is below entry.
+                short_entry = float(sig["ideal_buy"]) if sig["side"] == "SHORT" else float(price)
+                short_stop = float(sig["stop"]) if sig["side"] == "SHORT" else round(short_entry + stop_gap, auto_digits)
+                short_target = float(sig["ideal_sell"]) if sig["side"] == "SHORT" else round(max(0.000001, short_entry - stop_gap * rr_ratio), auto_digits)
+                short_calc = calculate_position_size(
+                    st.session_state.account_size, risk_pct,
+                    short_entry, short_stop, short_target, is_crypto=is_crypto
                 )
-            else:
-                st.warning(calc.get("reason", "Check your calculator inputs."))
-
-            already_open = any(
-                t["ticker"] == ticker and t["status"] == "OPEN"
-                for t in st.session_state.paper_trades
-            )
-            long_ready = sig["long_score"] >= 3 and sig["long_score"] > sig["short_score"]
-            short_ready = sig["short_score"] >= 3 and sig["short_score"] > sig["long_score"]
-
-            b1, b2 = st.columns(2)
-            if already_open:
-                st.info(f"You already have an open paper trade on {ticker}. Close it before opening another.")
-            else:
-                long_disabled = limit_hit or not calc.get("valid", False) or calc_side != "LONG" or not long_ready
-                short_disabled = limit_hit or not calc.get("valid", False) or calc_side != "SHORT" or not short_ready
-                if b1.button(
-                    f"🚀 Paper BUY · {quantity_display if calc.get('valid') else '—'} {calc.get('unit', 'shares')}",
-                    type="primary", use_container_width=True, disabled=long_disabled
-                ):
-                    st.session_state.paper_trades.append({
-                        "id": str(uuid.uuid4())[:8],
-                        "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
-                        "ticker": ticker,
-                        "side": "LONG",
-                        "entry": float(calc_entry),
-                        "stop": float(calc_stop),
-                        "target": float(calc_target),
-                        "shares": float(calc["quantity"]),
-                        "status": "OPEN",
-                        "exit": None,
-                        "pnl": None,
-                        "notes": f"Quick calculator · risk budget ${calc['risk_budget']:.2f}"
-                    })
-                    st.rerun()
-
-                if b2.button(
-                    f"🔻 Paper SHORT · {quantity_display if calc.get('valid') else '—'} {calc.get('unit', 'shares')}",
-                    type="secondary", use_container_width=True, disabled=short_disabled
-                ):
+                if not short_calc.get("valid"):
+                    st.error(short_calc.get("reason", "Could not calculate the short position."))
+                else:
                     st.session_state.paper_trades.append({
                         "id": str(uuid.uuid4())[:8],
                         "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
                         "ticker": ticker,
                         "side": "SHORT",
-                        "entry": float(calc_entry),
-                        "stop": float(calc_stop),
-                        "target": float(calc_target),
-                        "shares": float(calc["quantity"]),
+                        "entry": short_entry,
+                        "stop": short_stop,
+                        "target": short_target,
+                        "shares": float(short_calc["quantity"]),
                         "status": "OPEN",
                         "exit": None,
                         "pnl": None,
-                        "notes": f"Quick calculator · risk budget ${calc['risk_budget']:.2f}"
+                        "notes": f"Automatic Quick Execution · risk budget ${short_calc['risk_budget']:.2f}",
                     })
                     st.rerun()
 
-            if limit_hit:
-                st.error("Quick execution is paused because your daily loss limit has been reached.")
-            elif not calc.get("valid", False):
-                st.caption("Correct the entry, stop and target values to calculate a valid position size.")
-            elif calc_side == "LONG" and not long_ready:
-                st.caption("The calculator is ready, but the current technical checks do not confirm a LONG quick-execution setup. The manual paper-trade journal remains available below.")
-            elif calc_side == "SHORT" and not short_ready:
-                st.caption("The calculator is ready, but the current technical checks do not confirm a SHORT quick-execution setup. The manual paper-trade journal remains available below.")
+        if limit_hit:
+            st.error("Quick execution is paused because your daily loss limit has been reached.")
+        elif not auto_calc.get("valid", False):
+            st.caption("The automatic position calculator needs a larger risk budget or a smaller entry-to-stop distance.")
+        elif not long_ready and not short_ready:
+            st.caption("Automatic results are shown for reference, but neither BUY nor SHORT is enabled because the technical setup is not confirmed.")
+        elif auto_side == "LONG" and not long_ready:
+            st.caption("No confirmed bullish setup. Paper BUY remains disabled until the technical checks align.")
+        elif auto_side == "SHORT" and not short_ready:
+            st.caption("No confirmed bearish setup. Paper SHORT remains disabled until the technical checks align.")
 
         # ---------- DYNAMIC CHART WITH ZOOM / TOOLBAR & MARKERS ----------
         info_heading("📊 Live Price Chart", "Candles show open, high, low and close. VWAP is a volume-weighted session reference; EMA lines smooth price trends; volume bars show trading activity.", 4)
