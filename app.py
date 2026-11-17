@@ -353,7 +353,7 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         reasons = [
             f"Price (${price:.2f}) is right inside your ideal buy zone (${ideal_buy:.2f})",
             "Trading above VWAP with bullish EMA 9 > EMA 20 alignment",
-            f"Targeting ${ideal_sell:.2f} with stop at ${stop:.2f}"
+            f"Targeting ${ideal_sell:.2f} with stop at${stop:.2f}"
         ]
         side = "LONG"
         score = long_score
@@ -386,7 +386,7 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         action = "🛡️ WAIT (NO CLEAR SETUP)"
         reasons = [
             "Price is below VWAP or consolidating without clear momentum",
-            f"Watch for a reclaim above VWAP (${vwap:.2f}) or bounce near ${ideal_buy:.2f}"
+            f"Watch for a reclaim above VWAP (${vwap:.2f}) or bounce near${ideal_buy:.2f}"
         ]
         side = "None"
         score = max(long_score, short_score)
@@ -471,20 +471,21 @@ def render_dashboard():
         if limit_hit:
             st.error(f"⚠️ Daily loss limit reached (${st.session_state.daily_loss_limit:.0f}). Stop trading for today.")
 
+        # Metrics Row with built-in Beginner Info Tooltips (ⓘ icons)
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Current Price", f"${price:.2f}")
-        c2.metric("VWAP (Fair Value)", f"${sig['vwap']:.2f}")
-        c3.metric("RSI (Momentum)", f"{sig['rsi']:.0f}")
-        c4.metric("Setup Score", f"{sig['score']}/5")
-        c5.metric("15-min Trend", get_higher_tf_bias(ticker, include_247))
+        c1.metric("Current Price", f"${price:.2f}", help="The latest traded price of the stock right now.")
+        c2.metric("VWAP (Fair Value)", f"${sig['vwap']:.2f}", help="VWAP = Volume-Weighted Average Price. Think of it as the 'fair average price' for today. Price above VWAP = buyers in control.")
+        c3.metric("RSI (Momentum)", f"{sig['rsi']:.0f}", help="RSI measures speed of price movement (0 to 100). Above 70 = overextended/too high. Below 30 = oversold/too low.")
+        c4.metric("Setup Score", f"{sig['score']}/5", help="How many of our 5 trading rules are currently met. 5/5 is the highest confidence setup.")
+        c5.metric("15-min Trend", get_higher_tf_bias(ticker, include_247), help="The broader direction of the stock on the 15-minute chart.")
 
         if dash_mode == "Advanced (Pro)":
             st.markdown("##### 🔬 Advanced Pro Telemetry")
             ac1, ac2, ac3, ac4 = st.columns(4)
-            ac1.metric("ATR (Volatility)", f"${df.iloc[-1]['ATR']:.2f}")
-            ac2.metric("Volume vs MA", f"{df.iloc[-1]['Volume'] / max(df.iloc[-1]['Volume_MA'], 1):.2f}x")
-            ac3.metric("EMA 9 / EMA 20 Spread", f"${df.iloc[-1]['EMA9'] - df.iloc[-1]['EMA20']:+.2f}")
-            ac4.metric("Session High / Low", f"${df.tail(45)['High'].max():.2f} / ${df.tail(45)['Low'].min():.2f}")
+            ac1.metric("ATR (Volatility)", f"${df.iloc[-1]['ATR']:.2f}", help="Average True Range measures how much the stock typically moves per candle.")
+            ac2.metric("Volume vs MA", f"{df.iloc[-1]['Volume'] / max(df.iloc[-1]['Volume_MA'], 1):.2f}x", help="Current volume compared to its 8-period average. Higher means stronger interest.")
+            ac3.metric("EMA 9 / EMA 20 Spread", f"${df.iloc[-1]['EMA9'] - df.iloc[-1]['EMA20']:+.2f}", help="Distance between short-term trend averages.")
+            ac4.metric("Session High / Low", f"${df.tail(45)['High'].max():.2f} /${df.tail(45)['Low'].min():.2f}", help="Highest and lowest prices reached in the current trading window.")
 
         st.markdown("#### 🎯 Live Price Targets & Trade Zones")
         t1, t2, t3, t4 = st.columns(4)
@@ -493,13 +494,14 @@ def render_dashboard():
         hr_delta = ((sig["hourly_target"] - price) / price) * 100
         day_delta = ((sig["daily_target"] - price) / price) * 100
 
-        t1.metric("Ideal Buy Price", f"${sig['ideal_buy']:.2f}", f"{buy_delta:+.2f}% from now")
-        t2.metric("Ideal Sell Price", f"${sig['ideal_sell']:.2f}", f"{sell_delta:+.2f}% from now")
-        t3.metric("Hourly Target (1H)", f"${sig['hourly_target']:.2f}", f"{hr_delta:+.2f}% projected")
+        t1.metric("Ideal Buy Price", f"${sig['ideal_buy']:.2f}", f"{buy_delta:+.2f}% from now", help="The recommended entry price based on pullback support so you don't chase peaks.")
+        t2.metric("Ideal Sell Price", f"${sig['ideal_sell']:.2f}", f"{sell_delta:+.2f}% from now", help="Your target exit price for taking profit based on your Reward-to-Risk ratio.")
+        t3.metric("Hourly Target (1H)", f"${sig['hourly_target']:.2f}", f"{hr_delta:+.2f}% projected", help="Expected price movement over the next hour based on volatility.")
         t4.metric(
             "Daily Target (EOD)",
             f"${sig['daily_target']:.2f}",
-            f"{day_delta:+.2f}% (Range: ${sig['daily_range'][0]}–${sig['daily_range'][1]})"
+            f"{day_delta:+.2f}% (Range: ${sig['daily_range'][0]}–${sig['daily_range'][1]})",
+            help="Projected end-of-day price boundary based on 14-day average volatility."
         )
 
         left, right = st.columns(2)
@@ -508,12 +510,14 @@ def render_dashboard():
             for r in sig["reasons"]:
                 st.markdown(f"- {r}")
 
-            with st.expander("📖 How are Ideal Buy, Sell & Targets calculated?"):
+            # Beginner Glossary / Explain for Dummies Box
+            with st.expander("👶 Beginner's Guide: What do these terms mean?"):
                 st.markdown("""
-- **Ideal Buy Price**: Anchored to VWAP / EMA 9 pullback support in an uptrend, or lower volatility support in a downtrend.
-- **Ideal Sell Price**: Anchored to your Reward-to-Risk ratio above the Ideal Buy.
-- **Hourly Target**: Projects a 1-hour volatility envelope weighted by current trend direction.
-- **Daily Target**: Uses the 14-day Daily ATR anchored to today's open.
+- **VWAP (Fair Value Line)**: The average price people paid today, weighted by volume. If price is above VWAP, buyers are winning. If below, sellers are winning.
+- **RSI (Momentum Gauge)**: Tells you if a stock has moved too fast. Above 70 means it might be due for a cooldown; below 30 means it might bounce back up.
+- **EMA 9 & EMA 20 (Trend Lines)**: Short-term averages. When the faster line (9) is *above* the slower line (20), the short-term trend is pointing up.
+- **Stop Loss**: Your emergency exit price to limit losses if the trade goes against you.
+- **Take Profit / Target**: The price where you automatically cash out your winnings.
                 """)
 
         with right:
@@ -678,92 +682,4 @@ def render_dashboard():
                         "status": "OPEN",
                         "exit": None,
                         "pnl": None,
-                        "notes": j_notes
-                    })
-                    st.success("Trade logged successfully!")
-                    st.rerun()
-
-        if open_trades:
-            st.markdown("#### 📂 Active Positions")
-            for t in open_trades:
-                live_px = price if t["ticker"] == ticker else (get_fast_quote(t["ticker"]) or t["entry"])
-                unrealized = (live_px - t["entry"]) * t["shares"] if t["side"] == "LONG" else (t["entry"] - live_px) * t["shares"]
-
-                cols = st.columns([1.2, 0.9, 0.9, 1.0, 1.2, 1.0])
-                cols[0].write(f"**{t['ticker']}** ({t['side']})\n\n{t['shares']} sh")
-                cols[1].write(f"Entry: `${t['entry']}`\n\nLive: `${live_px:.2f}`")
-                cols[2].write(f"Stop: `${t['stop']}`\n\nTarget: `${t['target']}`")
-                cols[3].write(f"Unrealized:\n\n**${unrealized:+.2f}**")
-                exit_px = cols[4].number_input("Exit Price", value=float(live_px), key=f"ex_{t['id']}", format="%.2f")
-                if cols[5].button("Close Trade", key=f"cl_{t['id']}", use_container_width=True):
-                    pnl = (exit_px - t["entry"]) * t["shares"] if t["side"] == "LONG" else (t["entry"] - exit_px) * t["shares"]
-                    t["exit"] = exit_px
-                    t["pnl"] = round(pnl, 2)
-                    t["status"] = "CLOSED"
-                    st.rerun()
-
-        if closed_trades:
-            st.markdown("#### 📊 Progress Analytics & Closed History")
-            cdf = pd.DataFrame(closed_trades)
-            
-            total_pnl = sum(t["pnl"] for t in closed_trades if t["pnl"] is not None)
-            wins = [t for t in closed_trades if t["pnl"] and t["pnl"] > 0]
-            losses = [t for t in closed_trades if t["pnl"] and t["pnl"] < 0]
-            win_rate = (len(wins) / len(closed_trades)) * 100 if closed_trades else 0
-            
-            pk1, pk2, pk3, pk4 = st.columns(4)
-            pk1.metric("Total P&L", f"${total_pnl:+,.2f}")
-            pk2.metric("Win Rate", f"{win_rate:.1f}%", f"{len(wins)} Wins / {len(losses)} Losses")
-            pk3.metric("Avg Win", f"${sum(w['pnl'] for w in wins)/len(wins):,.2f}" if wins else "$0.00")
-            pk4.metric("Avg Loss", f"${sum(l['pnl'] for l in losses)/len(losses):,.2f}" if losses else "$0.00")
-
-            cdf["cumulative_pnl"] = cdf["pnl"].cumsum()
-            fig_eq = px.line(
-                cdf, x="time", y="cumulative_pnl", 
-                title="📈 Cumulative Equity Curve (Progress Over Time)",
-                labels={"cumulative_pnl": "Net P&L ($)", "time": "Trade Time"},
-                markers=True
-            )
-            fig_eq.update_layout(
-                paper_bgcolor="#121824", plot_bgcolor="#121824",
-                font=dict(color="#f8fafc"), height=300,
-                xaxis=dict(gridcolor="#1e293b"), yaxis=dict(gridcolor="#1e293b")
-            )
-            fig_eq.update_traces(line_color="#10b981" if total_pnl >= 0 else "#ef4444", line_width=3)
-            st.plotly_chart(fig_eq, use_container_width=True)
-
-            st.dataframe(
-                cdf[["time", "ticker", "side", "entry", "exit", "shares", "pnl", "notes"]],
-                use_container_width=True,
-                hide_index=True
-            )
-
-            col_exp, col_clr = st.columns([1, 1])
-            with col_exp:
-                csv_buffer = io.StringIO()
-                cdf.to_csv(csv_buffer, index=False)
-                st.download_button(
-                    "📥 Export Journal as CSV",
-                    csv_buffer.getvalue(),
-                    file_name=f"trading_journal_{date.today()}.csv",
-                    mime="text/csv"
-                )
-            with col_clr:
-                if st.button("🗑️ Clear Journal History"):
-                    st.session_state.paper_trades = []
-                    st.rerun()
-
-        if st.session_state.paper_trades and not closed_trades and not open_trades:
-            st.info("No active trades in journal.")
-
-    except Exception as e:
-        st.error(f"Something went wrong: {e}")
-
-render_dashboard()
-
-st.markdown("---")
-st.warning("""
-**⚠️ Educational Disclaimer**  
-This tool uses free Yahoo Finance data and is intended solely for paper trading, journaling practice, and educational learning.  
-It does not guarantee financial success. Always protect your capital with stop losses.
-""")
+                        "notes
