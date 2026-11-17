@@ -83,6 +83,10 @@ div[data-testid="stAlert"] { border-radius: 10px; }
 .buy { background: linear-gradient(110deg,#087f5b,#0c9b70); color: white; border: 1px solid #31c99a; }
 .short { background: linear-gradient(110deg,#a92c43,#d34257); color: white; border: 1px solid #fa7185; }
 .watch { background: linear-gradient(110deg,#174b82,#176ca5); color: white; border: 1px solid #3b9ed5; }
+/* Hover information icons */
+.info-tip { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; margin-left:5px; border:1px solid #4b7595; border-radius:50%; color:#8ed8ff; font-size:11px; font-weight:800; cursor:help; vertical-align:middle; position:relative; }
+.info-tip:hover { background:#12324a; border-color:#75cfff; color:#fff; }
+.info-tip[title]:hover::after { content:attr(title); position:absolute; z-index:99999; left:50%; top:calc(100% + 8px); transform:translateX(-50%); width:230px; white-space:normal; padding:9px 11px; border:1px solid #41617e; border-radius:8px; background:#101c2b; color:#eaf4ff; font-size:12px; line-height:1.4; font-weight:500; box-shadow:0 8px 22px rgba(0,0,0,.45); pointer-events:none; }
 /* Compact section labels */
 .terminal-kicker { color:#72c9f2; text-transform:uppercase; letter-spacing:.16em; font-size:.72rem; font-weight:800; }
 .terminal-hero { padding: 1.05rem 1.25rem; margin: .2rem 0 1rem; border:1px solid #2b4059; border-radius:15px; background:linear-gradient(115deg,rgba(20,40,62,.96),rgba(12,20,32,.96)); box-shadow:0 12px 30px rgba(0,0,0,.22); }
@@ -99,6 +103,13 @@ div[data-testid="stAlert"] { border-radius: 10px; }
 }
 </style>
 """, unsafe_allow_html=True)
+
+
+def info_heading(label, explanation, level=3):
+    """Render a compact heading with a hover-only explanation icon."""
+    safe_label = str(label).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    safe_tip = str(explanation).replace('&', '&amp;').replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
+    st.markdown(f'<h{level} style="margin:.35rem 0 .55rem">{safe_label}<span class="info-tip" title="{safe_tip}" aria-label="More information">i</span></h{level}>', unsafe_allow_html=True)
 
 # ---------- Yahoo Finance symbol search / recommendations ----------
 @st.cache_data(ttl=900, show_spinner=False)
@@ -130,7 +141,6 @@ RECOMMENDATION_UNIVERSE = [
     "XOM", "LLY", "COST", "PLTR", "ORCL"
 ]
 
-@st.cache_data(ttl=240, show_spinner=False)
 def scan_recommendation_candidates(scan_interval="15m", prepost=False, rr_ratio=1.8):
     """Rank a liquid, predefined US-stock universe using transparent technical rules."""
     rows = []
@@ -187,96 +197,6 @@ defaults = {
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
-
-# ---------- SIDEBAR ----------
-with st.sidebar:
-    st.markdown("### 🎛️ Terminal Settings")
-    dash_mode = st.radio(
-        "Experience Level",
-        ["Beginner (Simple)", "Advanced (Pro)"],
-        index=0,
-        help="Switch between learning view and pro trading view."
-    )
-
-    st.markdown("### ⭐ Your Watchlist")
-    manual_sym = st.text_input("Or enter a ticker manually", placeholder="e.g. META", key="manual_watch_symbol").upper().strip()
-    if st.button("➕ Add manual ticker", key="add_manual_symbol") and manual_sym:
-        if manual_sym not in st.session_state.watchlist:
-            st.session_state.watchlist.append(manual_sym)
-        st.session_state.active_ticker = manual_sym
-        st.rerun()
-
-    st.write("Quick Select:")
-    for sym in st.session_state.watchlist:
-        btn_type = "primary" if sym == st.session_state.active_ticker else "secondary"
-        if st.button(f"⚡ {sym}", key=f"btn_{sym}", type=btn_type, use_container_width=True):
-            st.session_state.active_ticker = sym
-            st.rerun()
-
-    st.markdown("---")
-    st.markdown("### 📈 Chart & Risk Controls")
-
-    chart_type = st.selectbox(
-        "Chart Style",
-        ["Candlestick", "Line Chart"],
-        index=0
-    )
-
-    timeframe_options = ["1m", "2m", "5m", "15m", "30m", "60m"]
-    interval = st.selectbox(
-        "Chart Timeframe",
-        timeframe_options,
-        index=0,
-        format_func=lambda value: "1h (60m)" if value == "60m" else value,
-        help="Yahoo Finance intraday intervals. 1m data has a shorter lookback than larger intervals."
-    )
-    trend_interval = st.selectbox(
-        "Trend / Bullish-Bearish Timeframe",
-        timeframe_options,
-        index=3,
-        format_func=lambda value: "1h (60m)" if value == "60m" else value,
-        help="Choose the timeframe used for the separate trend confirmation reading."
-    )
-
-    include_247 = st.checkbox(
-        "Include Pre/Post-Market",
-        value=True,
-        help="Pulls 4:00 AM – 8:00 PM EST extended session data."
-    )
-
-    # Expanded Account Size Range ($50 to $100,000+)
-    st.session_state.account_size = st.number_input(
-        "Account Size ($)",
-        min_value=50.0,
-        max_value=1000000.0,
-        value=st.session_state.account_size,
-        step=500.0
-    )
-
-    # Expanded Risk Percentage Range (up to 5.0%)
-    risk_pct = st.slider(
-        "Risk Per Trade (%)",
-        0.1, 5.0, 0.5, 0.1
-    ) / 100
-
-    # Expanded Reward-to-Risk Range (up to 5.0x)
-    rr_ratio = st.slider(
-        "Reward-to-Risk Target",
-        1.0, 5.0, 1.8, 0.1
-    )
-
-    st.session_state.daily_loss_limit = st.number_input(
-        "Max Daily Loss ($)",
-        min_value=10.0,
-        value=st.session_state.daily_loss_limit,
-        step=50.0
-    )
-
-    refresh_sec = st.slider("Auto-Refresh Rate (sec)", 8, 60, 8)
-    auto = st.checkbox("Enable Live Auto-Refresh", value=True)
-
-    st.markdown("---")
-    st.caption("Yahoo Finance data can be delayed or rate-limited. Intraday history varies by timeframe.")
 
 # ---------- Market Session Helper ----------
 def get_market_session():
@@ -531,29 +451,27 @@ def get_market_scan_executor():
 
 
 @st.fragment(run_every=15)
-def render_top_market_candidates():
-    st.markdown("## ⭐ Top Market Candidates")
-    st.caption(
-        "Refreshes automatically about every 5 minutes. Ranked technical research candidates from a curated liquid-stock universe. "
-        "Potential target percentages are formula-based scenarios, not promised returns or personalized advice."
-    )
-    button_col, info_col = st.columns([1, 3])
-    with button_col:
-        force_refresh = st.button("↻ Refresh candidates now", key="top_candidate_refresh", use_container_width=True)
-    with info_col:
-        st.caption("15-minute technical scan · automatic refresh every 5 minutes")
+def render_top_market_candidates(compact=False):
+    """Poll a single background scan; retain the last good results during refresh."""
+    if compact:
+        info_heading("⭐ Top Market Candidates", "Automatically refreshed technical watch ideas from a curated liquid-stock universe. A score is a checklist count, not a probability or prediction.", 3)
+    else:
+        info_heading("⭐ Top Market Candidates", "Automatically refreshed technical watch ideas from a curated liquid-stock universe. Target distances are rule-based scenarios, not promised returns.", 2)
+
+    if st.button("↻ Refresh candidates", key="top_candidate_refresh", use_container_width=True):
+        st.session_state["recommendation_force_refresh"] = True
 
     future = st.session_state.get("recommendation_future")
     requested_at = st.session_state.get("recommendation_requested_at", 0.0)
     now_ts = datetime.now().timestamp()
-    if force_refresh:
-        scan_recommendation_candidates.clear()
-        future = None
-        st.session_state["recommendation_rows"] = []
+    force_refresh = st.session_state.pop("recommendation_force_refresh", False)
 
-    # Launch scans in the background so search and the main dashboard remain visible.
+    if force_refresh:
+        # Do not discard the last completed list; it remains visible while the new scan runs.
+        future = None
+
     if future is None or (future.done() and now_ts - requested_at >= 300):
-        future = get_market_scan_executor().submit(scan_recommendation_candidates, "15m", False, rr_ratio)
+        future = get_market_scan_executor().submit(scan_recommendation_candidates, "15m", False, 1.8)
         st.session_state["recommendation_future"] = future
         st.session_state["recommendation_requested_at"] = now_ts
 
@@ -562,63 +480,150 @@ def render_top_market_candidates():
             rows = future.result()
             st.session_state["recommendation_rows"] = rows
             st.session_state["recommendation_scan_time"] = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %I:%M:%S %p ET")
+            st.session_state["recommendation_last_error"] = None
         except Exception as exc:
-            st.caption(f"Scanner temporarily unavailable: {exc}")
+            st.session_state["recommendation_last_error"] = str(exc)
 
     candidates = st.session_state.get("recommendation_rows", [])
     scan_time = st.session_state.get("recommendation_scan_time")
     if scan_time:
-        st.caption(f"Last completed scan: {scan_time} · Quotes may be delayed or rate-limited.")
+        st.caption(f"Updated {scan_time}")
     if not future.done():
-        if candidates:
-            st.info("Refreshing candidates in the background. Showing the last completed scan meanwhile.")
-        else:
-            st.info("Building the first candidate list in the background. You can use search and the dashboard while it runs.")
+        st.caption("⏳ Scanning in background… showing previous results until complete." if candidates else "⏳ First scan running in background…")
+    if st.session_state.get("recommendation_last_error"):
+        st.caption("Latest scan had a temporary data issue; retry with Refresh candidates.")
     if not candidates:
         return
 
     bullish = [row for row in candidates if row["_side"] == "LONG"]
     bearish = [row for row in candidates if row["_side"] == "SHORT"]
+    if compact:
+        for row in candidates[:6]:
+            tint = "🟢" if row["_side"] == "LONG" else "🔴"
+            st.markdown(
+                f'<div style="padding:7px 8px;margin:4px 0;border:1px solid #293b52;border-radius:8px;background:#111d2b">'
+                f'<b>{tint} {row["Symbol"]}</b> <span style="float:right">${row["Price"]:,.2f}</span><br>'
+                f'<span style="color:#9fb1c8;font-size:11px">{row["Bias"]} · {row["Today %"]:+.2f}% today · Score {row["Score"]} · Target {row["Potential %"]:+.2f}%</span></div>',
+                unsafe_allow_html=True
+            )
+        choices = [row["Symbol"] for row in candidates]
+        chosen = st.selectbox("Load candidate", choices, key="top_candidate_pick_sidebar")
+        if st.button("Load selected candidate", key="top_candidate_load_sidebar", use_container_width=True):
+            st.session_state.active_ticker = chosen
+            st.rerun()
+        return
+
     if bullish:
         st.markdown("#### 🟢 Bullish candidates")
         bullish_df = pd.DataFrame(bullish[:8]).drop(columns=["_score", "_reward_pct", "_side"], errors="ignore")
-        st.dataframe(
-            bullish_df, use_container_width=True, hide_index=True,
-            column_config={
-                "Price": st.column_config.NumberColumn("Current price", format="$%.2f"),
-                "Today %": st.column_config.NumberColumn("Day change", format="%+.2f%%"),
-                "Target Price": st.column_config.NumberColumn("Target price", format="$%.2f"),
-                "Potential %": st.column_config.NumberColumn("Target distance", format="%+.2f%%"),
-                "Entry": st.column_config.NumberColumn("Entry area", format="$%.2f"),
-                "Stop": st.column_config.NumberColumn("Stop", format="$%.2f"),
-            }
-        )
+        st.dataframe(bullish_df, use_container_width=True, hide_index=True, column_config={
+            "Price": st.column_config.NumberColumn("Current price", format="$%.2f"),
+            "Today %": st.column_config.NumberColumn("Day change", format="%+.2f%%"),
+            "Target Price": st.column_config.NumberColumn("Target price", format="$%.2f"),
+            "Potential %": st.column_config.NumberColumn("Target distance", format="%+.2f%%"),
+            "Entry": st.column_config.NumberColumn("Entry area", format="$%.2f"),
+            "Stop": st.column_config.NumberColumn("Stop", format="$%.2f"),
+        })
     else:
         st.info("No bullish candidates currently meet the scanner's minimum technical score.")
     if bearish:
         with st.expander("🔻 Bearish / short candidates", expanded=False):
             bearish_df = pd.DataFrame(bearish[:6]).drop(columns=["_score", "_reward_pct", "_side"], errors="ignore")
-            st.dataframe(
-                bearish_df, use_container_width=True, hide_index=True,
-                column_config={
-                    "Price": st.column_config.NumberColumn("Current price", format="$%.2f"),
-                    "Today %": st.column_config.NumberColumn("Day change", format="%+.2f%%"),
-                    "Target Price": st.column_config.NumberColumn("Target price", format="$%.2f"),
-                    "Potential %": st.column_config.NumberColumn("Target distance", format="%+.2f%%"),
-                }
-            )
+            st.dataframe(bearish_df, use_container_width=True, hide_index=True, column_config={
+                "Price": st.column_config.NumberColumn("Current price", format="$%.2f"),
+                "Today %": st.column_config.NumberColumn("Day change", format="%+.2f%%"),
+                "Target Price": st.column_config.NumberColumn("Target price", format="$%.2f"),
+                "Potential %": st.column_config.NumberColumn("Target distance", format="%+.2f%%"),
+            })
     choices = [row["Symbol"] for row in candidates]
     pick_col, add_col = st.columns([2, 1])
     with pick_col:
-        chosen = st.selectbox("Choose a candidate", choices, key="top_candidate_pick")
+        chosen = st.selectbox("Choose a candidate", choices, key="top_candidate_pick_main")
     with add_col:
         st.write("")
-        if st.button("＋ Add to watchlist", key="top_candidate_add", use_container_width=True):
+        if st.button("＋ Add to watchlist", key="top_candidate_add_main", use_container_width=True):
             if chosen not in st.session_state.watchlist:
                 st.session_state.watchlist.append(chosen)
             st.session_state.active_ticker = chosen
             st.rerun()
 
+
+# ---------- SIDEBAR ----------
+with st.sidebar:
+    st.markdown("### 🎛️ Terminal Settings")
+    dash_mode = st.radio(
+        "Experience Level",
+        ["Beginner (Simple)", "Advanced (Pro)"],
+        index=0,
+        help="Beginner mode explains signals in plain language. Advanced mode exposes more technical detail."
+    )
+
+    # Stock discovery and market candidates sit at the top of the left rail.
+    info_heading("🔎 Find a Stock", "Search by company name or ticker. Choose a result to load it into the dashboard or add it to your watchlist.", 3)
+    sidebar_query = st.text_input("Ticker or company", placeholder="Apple, NVDA, Microsoft…", key="sidebar_symbol_search")
+    if sidebar_query.strip():
+        sidebar_matches = search_stock_symbols(sidebar_query)
+        if sidebar_matches:
+            sidebar_labels = [f'{x["symbol"]} — {x["name"]}' for x in sidebar_matches]
+            sidebar_choice = st.selectbox("Matching symbols", sidebar_labels, key="sidebar_symbol_match")
+            sidebar_symbol = sidebar_matches[sidebar_labels.index(sidebar_choice)]["symbol"]
+            sb_load, sb_add = st.columns(2)
+            if sb_load.button("Load", key="sidebar_load_symbol", type="primary", use_container_width=True):
+                st.session_state.active_ticker = sidebar_symbol
+                st.rerun()
+            if sb_add.button("＋ Watch", key="sidebar_add_symbol", use_container_width=True):
+                if sidebar_symbol not in st.session_state.watchlist:
+                    st.session_state.watchlist.append(sidebar_symbol)
+                st.session_state.active_ticker = sidebar_symbol
+                st.rerun()
+        else:
+            st.caption("No symbols found. Try a ticker or another spelling.")
+
+    render_top_market_candidates(compact=True)
+
+    info_heading("⭐ Your Watchlist", "Your saved symbols. Select one to load its live chart and trading analysis.", 3)
+    manual_sym = st.text_input("Add ticker manually", placeholder="e.g. META", key="manual_watch_symbol").upper().strip()
+    if st.button("➕ Add manual ticker", key="add_manual_symbol", use_container_width=True) and manual_sym:
+        if manual_sym not in st.session_state.watchlist:
+            st.session_state.watchlist.append(manual_sym)
+        st.session_state.active_ticker = manual_sym
+        st.rerun()
+
+    for sym in st.session_state.watchlist:
+        btn_type = "primary" if sym == st.session_state.active_ticker else "secondary"
+        if st.button(f"⚡ {sym}", key=f"btn_{sym}", type=btn_type, use_container_width=True):
+            st.session_state.active_ticker = sym
+            st.rerun()
+
+    st.markdown("---")
+    info_heading("📈 Chart & Risk Controls", "Set the chart display, confirmation timeframe, position sizing assumptions and account risk limits.", 3)
+    chart_type = st.selectbox("Chart Style", ["Candlestick", "Line Chart"], index=0,
+                              help="Candlesticks show open, high, low and close. Line charts connect closing prices.")
+    timeframe_options = ["1m", "2m", "5m", "15m", "30m", "60m"]
+    interval = st.selectbox("Chart Timeframe", timeframe_options, index=0,
+                            format_func=lambda value: "1h (60m)" if value == "60m" else value,
+                            help="Length represented by each chart candle. Shorter intervals move faster and can be noisier.")
+    trend_interval = st.selectbox("Trend Confirmation Timeframe", timeframe_options, index=3,
+                                  format_func=lambda value: "1h (60m)" if value == "60m" else value,
+                                  help="Independent timeframe used to check the broader short-term trend.")
+    include_247 = st.checkbox("Include Pre/Post-Market", value=True,
+                              help="Include extended US trading hours when Yahoo Finance provides them.")
+    st.session_state.account_size = st.number_input("Account Size ($)", min_value=50.0, max_value=1000000.0,
+                                                     value=st.session_state.account_size, step=500.0,
+                                                     help="Paper account value used for position sizing. No real funds are connected.")
+    risk_pct = st.slider("Risk Per Trade (%)", 0.1, 5.0, 0.5, 0.1,
+                         help="Maximum planned account percentage at risk if the stop is reached.") / 100
+    rr_ratio = st.slider("Reward-to-Risk Target", 1.0, 5.0, 1.8, 0.1,
+                         help="Target reward divided by the amount planned to risk. For example, 2.0 means 2 dollars targeted for each 1 dollar risked.")
+    st.session_state.daily_loss_limit = st.number_input("Max Daily Loss ($)", min_value=10.0,
+                                                         value=st.session_state.daily_loss_limit, step=50.0,
+                                                         help="Paper-trading loss threshold used to pause new quick executions.")
+    refresh_sec = st.slider("Dashboard Refresh (sec)", 8, 60, 8,
+                            help="How often the live dashboard refreshes quotes and chart data.")
+    auto = st.checkbox("Enable Live Auto-Refresh", value=True,
+                       help="Automatically refresh the main dashboard. Candidate scans have their own refresh control.")
+    st.markdown("---")
+    st.caption("Yahoo Finance quotes can be delayed, incomplete or rate-limited.")
 
 # ---------- LIVE DASHBOARD FRAGMENT ----------
 run_interval = refresh_sec if auto else None
@@ -697,14 +702,14 @@ def render_dashboard():
         )
 
         if dash_mode == "Advanced (Pro)":
-            st.markdown("##### 🔬 Advanced Pro Telemetry")
+            info_heading("🔬 Advanced Pro Telemetry", "Additional technical readings: ATR measures volatility, volume versus average compares activity, and EMA spread shows trend separation.", 5)
             ac1, ac2, ac3, ac4 = st.columns(4)
             ac1.metric("ATR (Volatility)", f"${df.iloc[-1]['ATR']:.2f}", help="Average True Range measures how much the stock typically moves per candle.")
             ac2.metric("Volume vs MA", f"{df.iloc[-1]['Volume'] / max(df.iloc[-1]['Vol_MA'], 1):.2f}x", help="Current volume compared to its 8-period average. Higher means stronger interest.")
             ac3.metric("EMA 9 / EMA 20 Spread", f"${df.iloc[-1]['EMA9'] - df.iloc[-1]['EMA20']:+.2f}", help="Distance between short-term trend averages.")
             ac4.metric("Session High / Low", f"${df.tail(45)['High'].max():.2f} / ${df.tail(45)['Low'].min():.2f}", help="Highest and lowest prices reached in the current trading window.")
 
-        st.markdown("#### 🎯 Live Price Targets & Trade Zones")
+        info_heading("🎯 Live Price Targets & Trade Zones", "Illustrative entry, stop and target levels calculated from the selected chart interval and reward-to-risk setting.", 4)
         t1, t2, t3, t4 = st.columns(4)
         buy_delta = ((sig["ideal_buy"] - price) / price) * 100
         sell_delta = ((sig["ideal_sell"] - price) / price) * 100
@@ -723,7 +728,7 @@ def render_dashboard():
 
         left, right = st.columns(2)
         with left:
-            st.markdown("#### 💡 Why this setup?")
+            info_heading("💡 Why this setup?", "A short explanation of which technical checks are supporting or weakening the current signal.", 4)
             for r in sig["reasons"]:
                 st.markdown(f"- {r}")
 
@@ -738,7 +743,7 @@ def render_dashboard():
                 """)
 
         with right:
-            st.markdown("#### ⚡ Quick Trade Execution")
+            info_heading("⚡ Quick Trade Execution", "Creates a simulated long or short position using the account size, risk percentage and stop distance. It does not send broker orders.", 4)
             st.markdown(f"**Ideal Entry**: `${sig['ideal_buy']:.2f}`  |  **Stop Loss**: `${sig['stop']:.2f}`  |  **Take Profit**: `${sig['ideal_sell']:.2f}`")
 
             risk_dollars = st.session_state.account_size * risk_pct
@@ -763,7 +768,9 @@ def render_dashboard():
                 if already_open:
                     st.info(f"You already have an open paper trade on {ticker}.")
                 else:
-                    if b1.button(f"🚀 Paper BUY @ ${price:.2f}", type="primary", use_container_width=True, disabled=(sig["side"] != "LONG")):
+                    long_ready = sig["long_score"] >= 3 and sig["long_score"] > sig["short_score"]
+                    short_ready = sig["short_score"] >= 3 and sig["short_score"] > sig["long_score"]
+                    if b1.button(f"🚀 Paper BUY @ ${price:.2f}", type="primary", use_container_width=True, disabled=(not long_ready)):
                         st.session_state.paper_trades.append({
                             "id": str(uuid.uuid4())[:8],
                             "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
@@ -780,15 +787,18 @@ def render_dashboard():
                         })
                         st.rerun()
 
-                    if b2.button(f"🔻 Paper SHORT @ ${price:.2f}", type="secondary", use_container_width=True, disabled=(sig["side"] != "SHORT")):
-                        short_stop = round(price + stop_dist, 2)
-                        short_target = round(price - stop_dist * rr_ratio, 2)
+                    if b2.button(f"🔻 Paper SHORT @ ${price:.2f}", type="secondary", use_container_width=True, disabled=(not short_ready)):
+                        # Short positions profit when price falls: stop above entry, target below.
+                        short_entry = round(price, 2)
+                        short_risk = max(float(sig["stop_dist"]), price * 0.0025, 0.01)
+                        short_stop = round(short_entry + short_risk, 2)
+                        short_target = round(max(0.01, short_entry - short_risk * rr_ratio), 2)
                         st.session_state.paper_trades.append({
                             "id": str(uuid.uuid4())[:8],
                             "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
                             "ticker": ticker,
                             "side": "SHORT",
-                            "entry": round(price, 2),
+                            "entry": short_entry,
                             "stop": short_stop,
                             "target": short_target,
                             "shares": shares,
@@ -800,6 +810,7 @@ def render_dashboard():
                         st.rerun()
 
         # ---------- DYNAMIC CHART WITH ZOOM / TOOLBAR & MARKERS ----------
+        info_heading("📊 Live Price Chart", "Candles show open, high, low and close. VWAP is a volume-weighted session reference; EMA lines smooth price trends; volume bars show trading activity.", 4)
         plot_df = df.tail(90)
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.78, 0.22], vertical_spacing=0.02)
 
@@ -874,7 +885,7 @@ def render_dashboard():
 
         # ---------- PRO TRADING JOURNAL & PROGRESS ANALYTICS ----------
         st.markdown("---")
-        st.markdown("### 📓 Trading Journal & Progress Analytics")
+        info_heading("📓 Trading Journal & Progress Analytics", "Record simulated trades, close positions at an entered exit price, and review realized profit/loss and win rate.", 3)
 
         open_trades = [t for t in st.session_state.paper_trades if t["status"] == "OPEN"]
         closed_trades = [t for t in st.session_state.paper_trades if t["status"] == "CLOSED"]
@@ -919,7 +930,7 @@ def render_dashboard():
                     st.rerun()
 
         if open_trades:
-            st.markdown("#### 📂 Active Positions")
+            info_heading("📂 Active Positions", "Open simulated trades with live or last-available mark prices. Enter an exit price and close a position to realize its paper P&L.", 4)
             for t in open_trades:
                 live_px = price if t["ticker"] == ticker else (get_fast_quote(t["ticker"]) or t["entry"])
                 unrealized = (live_px - t["entry"]) * t["shares"] if t["side"] == "LONG" else (t["entry"] - live_px) * t["shares"]
@@ -939,7 +950,7 @@ def render_dashboard():
                     st.rerun()
 
         if closed_trades:
-            st.markdown("#### 📊 Progress Analytics & Closed History")
+            info_heading("📊 Progress Analytics & Closed History", "Closed paper-trade results, including total P&L, win rate, average win/loss and the cumulative equity curve.", 4)
             cdf = pd.DataFrame(closed_trades)
             
             total_pnl = sum(t["pnl"] for t in closed_trades if t["pnl"] is not None)
@@ -1002,38 +1013,6 @@ st.markdown("""
   <p>A focused trading workspace with market candidates, multi-timeframe confirmation, risk planning and a built-in paper-trading journal.</p>
 </div>
 """, unsafe_allow_html=True)
-render_top_market_candidates()
-
-# ---------- STOCK SEARCH / AUTOFILL ----------
-st.markdown("## 🔎 Find a Stock")
-st.caption("Search by company name or ticker, then load it into the live workspace or save it to your watchlist.")
-search_query = st.text_input(
-    "Search ticker or company name",
-    placeholder="Start typing: Apple, NVDA, Microsoft…",
-    key="main_symbol_search_query"
-)
-if search_query.strip():
-    search_results = search_stock_symbols(search_query)
-    if search_results:
-        search_options = [
-            f'{item["symbol"]} — {item["name"]} ({item["type"]})'
-            for item in search_results
-        ]
-        chosen_label = st.selectbox("Matching stocks and ETFs · choose a result", search_options, key="main_symbol_search_pick")
-        chosen_symbol = search_results[search_options.index(chosen_label)]["symbol"]
-        load_col, watch_col = st.columns(2)
-        with load_col:
-            if st.button("Load selected stock", type="primary", use_container_width=True):
-                st.session_state.active_ticker = chosen_symbol
-                st.rerun()
-        with watch_col:
-            if st.button("＋ Add selected to watchlist", use_container_width=True):
-                if chosen_symbol not in st.session_state.watchlist:
-                    st.session_state.watchlist.append(chosen_symbol)
-                st.session_state.active_ticker = chosen_symbol
-                st.rerun()
-    else:
-        st.info("No matching symbols found. Try a ticker symbol or another company spelling.")
 
 st.markdown("---")
 render_dashboard()
