@@ -170,6 +170,66 @@ def price_decimals(price):
     except (TypeError, ValueError):
         return 2
 
+
+def calculate_position_size(account_size, risk_fraction, entry, stop, target, is_crypto=False):
+    """Calculate a conservative paper position size and its risk/reward estimates.
+
+    Stocks are rounded down to whole shares; crypto is rounded down to six decimals.
+    Notional exposure is capped at the paper account balance for both directions.
+    """
+    try:
+        account = float(account_size)
+        risk_fraction = float(risk_fraction)
+        entry = float(entry)
+        stop = float(stop)
+        target = float(target)
+    except (TypeError, ValueError):
+        return {"valid": False, "reason": "Enter valid numeric values for the account, entry, stop and target."}
+
+    if not all(np.isfinite(v) for v in (account, risk_fraction, entry, stop, target)):
+        return {"valid": False, "reason": "All calculator values must be finite numbers."}
+    if account <= 0 or not 0 < risk_fraction <= 1 or entry <= 0 or stop <= 0 or target <= 0:
+        return {"valid": False, "reason": "Account, entry, stop and target must be above zero; risk must be between 0% and 100%."}
+
+    # A stop below entry defines a LONG; a stop above entry defines a SHORT.
+    side = "LONG" if stop < entry < target else ("SHORT" if target < entry < stop else None)
+    if side is None:
+        return {"valid": False, "reason": "LONG needs Stop < Entry < Target. SHORT needs Target < Entry < Stop."}
+
+    stop_distance = abs(entry - stop)
+    reward_distance = abs(target - entry)
+    risk_budget = account * risk_fraction
+    risk_based_qty = risk_budget / stop_distance
+    buying_power_cap = account / entry
+    raw_qty = min(risk_based_qty, buying_power_cap)
+
+    if is_crypto:
+        quantity = float(np.floor(raw_qty * 1_000_000) / 1_000_000)
+        unit = "units"
+    else:
+        quantity = float(int(raw_qty))
+        unit = "shares"
+
+    if quantity <= 0:
+        return {"valid": False, "reason": "The risk budget or account size is too small for one share/unit at these levels."}
+
+    planned_risk = quantity * stop_distance
+    potential_reward = quantity * reward_distance
+    return {
+        "valid": True,
+        "side": side,
+        "quantity": quantity,
+        "unit": unit,
+        "risk_budget": risk_budget,
+        "planned_risk": planned_risk,
+        "position_value": quantity * entry,
+        "potential_reward": potential_reward,
+        "reward_to_risk": reward_distance / stop_distance,
+        "buying_power_cap": buying_power_cap,
+        "risk_pct_used": (planned_risk / account) * 100,
+        "stop_distance": stop_distance,
+    }
+
 def scan_recommendation_candidates(scan_interval="15m", prepost=False, rr_ratio=1.8):
     """Rank a curated universe of liquid US stocks/ETFs and major crypto pairs."""
     rows = []
@@ -487,6 +547,26 @@ def get_market_scan_executor():
     return ThreadPoolExecutor(max_workers=1, thread_name_prefix="market-candidate-scan")
 
 
+def normalize_candidate_row(raw_row):
+    """Backfill fields when Streamlit session state contains rows from an older app version."""
+    row = dict(raw_row) if not isinstance(raw_row, dict) else raw_row.copy()
+    symbol = str(row.get("Symbol") or row.get("symbol") or "UNKNOWN").upper()
+    row["Symbol"] = symbol
+    row["Asset Name"] = row.get("Asset Name") or row.get("Name") or row.get("name") or display_asset_name(symbol)
+    row["Asset Type"] = row.get("Asset Type") or ("Crypto" if symbol.endswith("-USD") else "Stock / ETF")
+    row["Bias"] = row.get("Bias") or ("Bullish" if row.get("_side", "LONG") == "LONG" else "Bearish")
+    row["_side"] = row.get("_side") or ("SHORT" if str(row["Bias"]).lower() in {"bearish", "short"} else "LONG")
+    row.setdefault("Price", 0.0)
+    row.setdefault("Today %", 0.0)
+    row.setdefault("Score", "—")
+    row.setdefault("Potential %", 0.0)
+    row.setdefault("Target Price", row.get("Price", 0.0))
+    row.setdefault("Entry", row.get("Price", 0.0))
+    row.setdefault("Stop", row.get("Price", 0.0))
+    row.setdefault("RSI", 0.0)
+    return row
+
+
 @st.fragment(run_every=15)
 def render_top_market_candidates(compact=False):
     """Poll a single background scan; retain the last good results during refresh."""
@@ -521,7 +601,10 @@ def render_top_market_candidates(compact=False):
         except Exception as exc:
             st.session_state["recommendation_last_error"] = str(exc)
 
-    candidates = st.session_state.get("recommendation_rows", [])
+    # Older session-state entries may predate the Asset Name / Asset Type fields.
+    # Normalize at display time so deployments and browser sessions do not crash.
+    candidates = [normalize_candidate_row(row) for row in st.session_state.get("recommendation_rows", [])]
+    st.session_state["recommendation_rows"] = candidates
     scan_time = st.session_state.get("recommendation_scan_time")
     if scan_time:
         st.caption(f"Updated {scan_time}")
@@ -779,81 +862,131 @@ def render_dashboard():
                 """)
 
         with right:
-            info_heading("⚡ Quick Trade Execution", "Creates a simulated long or short position using the account size, risk percentage and stop distance. It does not send broker orders.", 4)
-            st.markdown(f"**Ideal Entry**: `${sig['ideal_buy']:,.{ticker_digits}f}`  |  **Stop Loss**: `${sig['stop']:,.{ticker_digits}f}`  |  **Take Profit**: `${sig['ideal_sell']:,.{ticker_digits}f}`")
-
-            risk_dollars = st.session_state.account_size * risk_pct
+            info_heading("⚡ Quick Trade Execution", "Calculate a position from your account balance and risk limit, review the potential loss and reward, then open a simulated position. No broker order is sent.", 4)
             is_crypto = ticker.endswith("-USD")
-            stop_dist = max(float(sig["stop_dist"]), 0.000001 if is_crypto else 0.01)
-            if is_crypto:
-                risk_based_shares = risk_dollars / stop_dist
-                buying_power_shares = st.session_state.account_size / max(price, 0.000001)
-                shares = round(max(0.0, min(risk_based_shares, buying_power_shares)), 6)
-                unit_label = "units"
-            else:
-                risk_based_shares = int(risk_dollars / stop_dist)
-                buying_power_shares = int(st.session_state.account_size / max(price, 0.01))
-                shares = max(0, min(risk_based_shares, buying_power_shares))
-                unit_label = "shares"
-            actual_risk = shares * stop_dist
-            st.markdown(
-                f"**Position Size**: `{shares}` {unit_label} "
-                f"(risk budget `${risk_dollars:,.2f}`; estimated risk `${actual_risk:,.2f}`; "
-                f"buying-power cap `{buying_power_shares:.6f}` {unit_label})" if is_crypto else
-                f"buying-power cap `{buying_power_shares}` {unit_label})"
+            unit_digits = price_decimals(price)
+            calc_step = 0.000001 if is_crypto else 0.01
+            calc_format = f"%.{unit_digits}f"
+            default_side = "SHORT" if sig["short_score"] > sig["long_score"] else "LONG"
+            calc_side = st.radio(
+                "Calculator Direction", ["LONG", "SHORT"],
+                index=1 if default_side == "SHORT" else 0,
+                horizontal=True,
+                key=f"quick_calc_side_{ticker}",
+                help="LONG benefits from a rising price. SHORT benefits from a falling price."
             )
+
+            suggested_entry = float(sig["ideal_buy"] if sig["side"] == calc_side else price)
+            suggested_gap = max(float(sig["stop_dist"]), price * 0.0025, 0.000001)
+            if calc_side == "LONG":
+                suggested_stop = float(sig["stop"] if sig["side"] == "LONG" else max(0.000001, suggested_entry - suggested_gap))
+                suggested_target = float(sig["ideal_sell"] if sig["side"] == "LONG" else suggested_entry + suggested_gap * rr_ratio)
+            else:
+                suggested_stop = float(sig["stop"] if sig["side"] == "SHORT" else suggested_entry + suggested_gap)
+                suggested_target = float(sig["ideal_sell"] if sig["side"] == "SHORT" else max(0.000001, suggested_entry - suggested_gap * rr_ratio))
+
+            calc1, calc2, calc3 = st.columns(3)
+            calc_entry = calc1.number_input(
+                "Planned Entry ($)", min_value=0.000001, value=round(suggested_entry, unit_digits),
+                step=calc_step, format=calc_format, key=f"quick_calc_entry_{ticker}_{calc_side}",
+                help="The simulated price where this position would open."
+            )
+            calc_stop = calc2.number_input(
+                "Stop Loss ($)", min_value=0.000001, value=round(suggested_stop, unit_digits),
+                step=calc_step, format=calc_format, key=f"quick_calc_stop_{ticker}_{calc_side}",
+                help="The planned exit if price moves against the trade."
+            )
+            calc_target = calc3.number_input(
+                "Take Profit ($)", min_value=0.000001, value=round(suggested_target, unit_digits),
+                step=calc_step, format=calc_format, key=f"quick_calc_target_{ticker}_{calc_side}",
+                help="The planned profit-taking price."
+            )
+
+            calc = calculate_position_size(
+                st.session_state.account_size, risk_pct, calc_entry, calc_stop, calc_target, is_crypto=is_crypto
+            )
+            if calc.get("valid") and calc.get("side") != calc_side:
+                calc = {
+                    "valid": False,
+                    "reason": f"These prices describe a {calc.get('side')} setup. For {calc_side}, adjust the stop and target to the correct side of your entry."
+                }
+            if calc.get("valid"):
+                m1, m2, m3, m4, m5 = st.columns(5)
+                m1.metric("Risk Budget", f"${calc['risk_budget']:,.2f}", help="Account size multiplied by the Risk Per Trade setting in the sidebar.")
+                quantity_display = f"{calc['quantity']:,.6f}" if is_crypto else f"{int(calc['quantity']):,}"
+                m2.metric("Position Size", f"{quantity_display} {calc['unit']}", help="Quantity rounded down to fit both the risk budget and account-size buying-power cap.")
+                m3.metric("Position Value", f"${calc['position_value']:,.2f}", help="Entry price multiplied by the calculated quantity.")
+                m4.metric("Estimated Stop Loss", f"-${calc['planned_risk']:,.2f}", help="Estimated loss if the stop is reached, excluding fees, slippage and execution differences.")
+                m5.metric("Potential Profit", f"+${calc['potential_reward']:,.2f}", help="Estimated gain if the target is reached, before fees and slippage.")
+                st.caption(
+                    f"{calc['side']} calculator · Reward/Risk **{calc['reward_to_risk']:.2f}:1** · "
+                    f"Account risk used **{calc['risk_pct_used']:.2f}%** · "
+                    f"Buying-power cap **{calc['buying_power_cap']:,.6f} {calc['unit']}**"
+                )
+            else:
+                st.warning(calc.get("reason", "Check your calculator inputs."))
 
             already_open = any(
                 t["ticker"] == ticker and t["status"] == "OPEN"
                 for t in st.session_state.paper_trades
             )
+            long_ready = sig["long_score"] >= 3 and sig["long_score"] > sig["short_score"]
+            short_ready = sig["short_score"] >= 3 and sig["short_score"] > sig["long_score"]
 
-            if not limit_hit and shares > 0:
-                b1, b2 = st.columns(2)
-                if already_open:
-                    st.info(f"You already have an open paper trade on {ticker}.")
-                else:
-                    long_ready = sig["long_score"] >= 3 and sig["long_score"] > sig["short_score"]
-                    short_ready = sig["short_score"] >= 3 and sig["short_score"] > sig["long_score"]
-                    if b1.button(f"🚀 Paper BUY @ ${price:,.{ticker_digits}f}", type="primary", use_container_width=True, disabled=(not long_ready)):
-                        st.session_state.paper_trades.append({
-                            "id": str(uuid.uuid4())[:8],
-                            "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
-                            "ticker": ticker,
-                            "side": "LONG",
-                            "entry": round(price, ticker_digits),
-                            "stop": sig["stop"],
-                            "target": sig["ideal_sell"],
-                            "shares": shares,
-                            "status": "OPEN",
-                            "exit": None,
-                            "pnl": None,
-                            "notes": "Quick Execution Signal"
-                        })
-                        st.rerun()
+            b1, b2 = st.columns(2)
+            if already_open:
+                st.info(f"You already have an open paper trade on {ticker}. Close it before opening another.")
+            else:
+                long_disabled = limit_hit or not calc.get("valid", False) or calc_side != "LONG" or not long_ready
+                short_disabled = limit_hit or not calc.get("valid", False) or calc_side != "SHORT" or not short_ready
+                if b1.button(
+                    f"🚀 Paper BUY · {quantity_display if calc.get('valid') else '—'} {calc.get('unit', 'shares')}",
+                    type="primary", use_container_width=True, disabled=long_disabled
+                ):
+                    st.session_state.paper_trades.append({
+                        "id": str(uuid.uuid4())[:8],
+                        "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
+                        "ticker": ticker,
+                        "side": "LONG",
+                        "entry": float(calc_entry),
+                        "stop": float(calc_stop),
+                        "target": float(calc_target),
+                        "shares": float(calc["quantity"]),
+                        "status": "OPEN",
+                        "exit": None,
+                        "pnl": None,
+                        "notes": f"Quick calculator · risk budget ${calc['risk_budget']:.2f}"
+                    })
+                    st.rerun()
 
-                    if b2.button(f"🔻 Paper SHORT @ ${price:,.{ticker_digits}f}", type="secondary", use_container_width=True, disabled=(not short_ready)):
-                        # Short positions profit when price falls: stop above entry, target below.
-                        short_digits = price_decimals(price)
-                        short_entry = round(price, short_digits)
-                        short_risk = max(float(sig["stop_dist"]), price * 0.0025, 0.000001)
-                        short_stop = round(short_entry + short_risk, short_digits)
-                        short_target = round(max(0.000001, short_entry - short_risk * rr_ratio), short_digits)
-                        st.session_state.paper_trades.append({
-                            "id": str(uuid.uuid4())[:8],
-                            "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
-                            "ticker": ticker,
-                            "side": "SHORT",
-                            "entry": short_entry,
-                            "stop": short_stop,
-                            "target": short_target,
-                            "shares": shares,
-                            "status": "OPEN",
-                            "exit": None,
-                            "pnl": None,
-                            "notes": "Quick Execution Signal"
-                        })
-                        st.rerun()
+                if b2.button(
+                    f"🔻 Paper SHORT · {quantity_display if calc.get('valid') else '—'} {calc.get('unit', 'shares')}",
+                    type="secondary", use_container_width=True, disabled=short_disabled
+                ):
+                    st.session_state.paper_trades.append({
+                        "id": str(uuid.uuid4())[:8],
+                        "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
+                        "ticker": ticker,
+                        "side": "SHORT",
+                        "entry": float(calc_entry),
+                        "stop": float(calc_stop),
+                        "target": float(calc_target),
+                        "shares": float(calc["quantity"]),
+                        "status": "OPEN",
+                        "exit": None,
+                        "pnl": None,
+                        "notes": f"Quick calculator · risk budget ${calc['risk_budget']:.2f}"
+                    })
+                    st.rerun()
+
+            if limit_hit:
+                st.error("Quick execution is paused because your daily loss limit has been reached.")
+            elif not calc.get("valid", False):
+                st.caption("Correct the entry, stop and target values to calculate a valid position size.")
+            elif calc_side == "LONG" and not long_ready:
+                st.caption("The calculator is ready, but the current technical checks do not confirm a LONG quick-execution setup. The manual paper-trade journal remains available below.")
+            elif calc_side == "SHORT" and not short_ready:
+                st.caption("The calculator is ready, but the current technical checks do not confirm a SHORT quick-execution setup. The manual paper-trade journal remains available below.")
 
         # ---------- DYNAMIC CHART WITH ZOOM / TOOLBAR & MARKERS ----------
         info_heading("📊 Live Price Chart", "Candles show open, high, low and close. VWAP is a volume-weighted session reference; EMA lines smooth price trends; volume bars show trading activity.", 4)
@@ -929,127 +1062,184 @@ def render_dashboard():
             }
         )
 
-        # ---------- PRO TRADING JOURNAL & PROGRESS ANALYTICS ----------
+        # ---------- PAPER TRADING WORKSPACE ----------
         st.markdown("---")
-        info_heading("📓 Trading Journal & Progress Analytics", "Record simulated trades, close positions at an entered exit price, and review realized profit/loss and win rate.", 3)
+        info_heading("🧪 Paper Trading Desk", "A simulated portfolio for practicing entries, exits and risk management. No broker orders or real money are involved.", 3)
 
-        open_trades = [t for t in st.session_state.paper_trades if t["status"] == "OPEN"]
-        closed_trades = [t for t in st.session_state.paper_trades if t["status"] == "CLOSED"]
+        # Normalize older session records so one incomplete trade cannot break this section.
+        paper_records = st.session_state.get("paper_trades", [])
+        if not isinstance(paper_records, list):
+            paper_records = []
+        normalized_records = []
+        for record in paper_records:
+            if not isinstance(record, dict):
+                continue
+            trade = dict(record)
+            trade.setdefault("id", str(uuid.uuid4())[:8])
+            trade.setdefault("ticker", "UNKNOWN")
+            trade.setdefault("side", "LONG")
+            trade.setdefault("entry", 0.0)
+            trade.setdefault("stop", 0.0)
+            trade.setdefault("target", 0.0)
+            trade.setdefault("shares", 0.0)
+            trade.setdefault("status", "OPEN")
+            trade.setdefault("exit", None)
+            trade.setdefault("pnl", None)
+            trade.setdefault("notes", "")
+            trade["ticker"] = str(trade["ticker"]).upper()
+            trade["side"] = "SHORT" if str(trade["side"]).upper() == "SHORT" else "LONG"
+            trade["status"] = "CLOSED" if str(trade["status"]).upper() == "CLOSED" else "OPEN"
+            normalized_records.append(trade)
+        st.session_state.paper_trades = normalized_records
 
-        with st.expander("✍️ Add Custom Trade to Journal"):
-            with st.form("manual_trade_form"):
-                jc1, jc2, jc3, jc4 = st.columns(4)
-                j_ticker = jc1.text_input("Ticker", value=ticker).upper()
-                j_side = jc2.selectbox("Side", ["LONG", "SHORT"])
-                j_entry = jc3.number_input("Entry Price", value=float(price), format=f"%.{ticker_digits}f")
-                j_shares = jc4.number_input("Shares / Units", min_value=0.000001, value=1.0, step=0.01, format="%.6f")
-                
-                jc5, jc6 = st.columns(2)
-                j_stop = jc5.number_input("Stop Loss", value=float(price * 0.99), format=f"%.{ticker_digits}f")
-                j_target = jc6.number_input("Take Profit", value=float(price * 1.02), format=f"%.{ticker_digits}f")
-                
-                j_notes = st.text_area("Trading Notes / Psychology / Strategy Setup", placeholder="e.g. VWAP reclaim on strong morning volume...")
-                
-                submitted = st.form_submit_button("Save Trade to Journal")
-                if submitted:
-                    valid_levels = (j_entry > 0 and j_shares > 0 and
-                                    ((j_side == "LONG" and j_stop < j_entry < j_target) or
-                                     (j_side == "SHORT" and j_target < j_entry < j_stop)))
-                    if not valid_levels:
-                        st.error("Check trade levels: LONG requires stop < entry < target; SHORT requires target < entry < stop.")
-                        st.stop()
-                    st.session_state.paper_trades.append({
+        open_trades = [t for t in normalized_records if t["status"] == "OPEN"]
+        closed_trades = [t for t in normalized_records if t["status"] == "CLOSED"]
+        realized_pnl = sum(float(t.get("pnl") or 0) for t in closed_trades)
+        unrealized_pnl = 0.0
+        marked_positions = []
+        for trade in open_trades:
+            try:
+                mark = price if trade["ticker"] == ticker else (get_fast_quote(trade["ticker"]) or float(trade["entry"]))
+                qty = float(trade["shares"])
+                entry = float(trade["entry"])
+                pnl = (mark - entry) * qty if trade["side"] == "LONG" else (entry - mark) * qty
+                unrealized_pnl += pnl
+                marked_positions.append((trade, float(mark), float(pnl)))
+            except (TypeError, ValueError, KeyError):
+                marked_positions.append((trade, float(trade.get("entry") or 0), 0.0))
+        portfolio_equity = float(st.session_state.account_size) + realized_pnl + unrealized_pnl
+        total_return = ((portfolio_equity / float(st.session_state.account_size)) - 1) * 100 if st.session_state.account_size else 0.0
+
+        p1, p2, p3, p4, p5 = st.columns(5)
+        p1.metric("Starting Balance", f"${st.session_state.account_size:,.2f}")
+        p2.metric("Portfolio Equity", f"${portfolio_equity:,.2f}", f"{total_return:+.2f}%")
+        p3.metric("Realized P&L", f"${realized_pnl:+,.2f}")
+        p4.metric("Open P&L", f"${unrealized_pnl:+,.2f}")
+        p5.metric("Open Positions", str(len(open_trades)))
+        st.caption("Portfolio equity = starting balance + closed-trade P&L + estimated open-trade P&L. Quotes may be delayed or unavailable.")
+
+        with st.expander("➕ Add a Paper Trade", expanded=not bool(open_trades and closed_trades)):
+            st.caption("Choose LONG to practice buying first, or SHORT to practice selling first. Stop and target defaults adjust to the selected side.")
+            mc1, mc2, mc3, mc4 = st.columns([1.2, 0.8, 1, 1])
+            manual_ticker = mc1.text_input("Ticker / Crypto Pair", value=ticker, key="paper_manual_ticker").strip().upper()
+            manual_side = mc2.selectbox("Position Side", ["LONG", "SHORT"], key="paper_manual_side")
+            manual_entry = mc3.number_input("Entry Price", min_value=0.000001, value=float(price), step=0.01 if not ticker.endswith("-USD") else 0.000001, format="%.6f" if ticker.endswith("-USD") else "%.2f", key="paper_manual_entry")
+            manual_qty = mc4.number_input("Shares / Units", min_value=0.000001, value=1.0, step=0.01, format="%.6f", key="paper_manual_qty")
+            manual_crypto = manual_ticker.endswith("-USD")
+            manual_digits = 6 if manual_crypto else 2
+            default_gap = max(float(manual_entry) * 0.01, 0.000001 if manual_crypto else 0.01)
+            if manual_side == "LONG":
+                default_stop, default_target = max(0.000001, manual_entry - default_gap), manual_entry + default_gap * 2
+            else:
+                default_stop, default_target = manual_entry + default_gap, max(0.000001, manual_entry - default_gap * 2)
+            mc5, mc6, mc7 = st.columns([1, 1, 2])
+            manual_stop = mc5.number_input("Stop Loss", min_value=0.000001, value=float(default_stop), step=0.01 if not manual_crypto else 0.000001, format=f"%.{manual_digits}f", key=f"paper_stop_{manual_side}")
+            manual_target = mc6.number_input("Take Profit", min_value=0.000001, value=float(default_target), step=0.01 if not manual_crypto else 0.000001, format=f"%.{manual_digits}f", key=f"paper_target_{manual_side}")
+            manual_notes = mc7.text_input("Trade Notes", placeholder="Setup, reason for entry, or lesson learned", key="paper_manual_notes")
+            valid_manual = bool(manual_ticker) and manual_entry > 0 and manual_qty > 0 and (
+                (manual_side == "LONG" and manual_stop < manual_entry < manual_target) or
+                (manual_side == "SHORT" and manual_target < manual_entry < manual_stop)
+            )
+            if st.button("Save Paper Trade", type="primary", disabled=not valid_manual, key="save_manual_paper_trade"):
+                if any(t["ticker"] == manual_ticker and t["status"] == "OPEN" for t in normalized_records):
+                    st.warning(f"There is already an open paper position for {manual_ticker}. Close it before opening another.")
+                else:
+                    normalized_records.append({
                         "id": str(uuid.uuid4())[:8],
                         "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
-                        "ticker": j_ticker,
-                        "side": j_side,
-                        "entry": j_entry,
-                        "stop": j_stop,
-                        "target": j_target,
-                        "shares": j_shares,
-                        "status": "OPEN",
-                        "exit": None,
-                        "pnl": None,
-                        "notes": j_notes
+                        "ticker": manual_ticker, "side": manual_side,
+                        "entry": float(manual_entry), "stop": float(manual_stop),
+                        "target": float(manual_target), "shares": float(manual_qty),
+                        "status": "OPEN", "exit": None, "pnl": None, "notes": manual_notes
                     })
-                    st.success("Trade logged successfully!")
+                    st.session_state.paper_trades = normalized_records
+                    st.success(f"{manual_side} paper position saved for {manual_ticker}.")
                     st.rerun()
+            if not valid_manual:
+                st.warning("Check your levels: LONG requires Stop < Entry < Target. SHORT requires Target < Entry < Stop.")
 
         if open_trades:
-            info_heading("📂 Active Positions", "Open simulated trades with live or last-available mark prices. Enter an exit price and close a position to realize its paper P&L.", 4)
-            for t in open_trades:
-                live_px = price if t["ticker"] == ticker else (get_fast_quote(t["ticker"]) or t["entry"])
-                unrealized = (live_px - t["entry"]) * t["shares"] if t["side"] == "LONG" else (t["entry"] - live_px) * t["shares"]
-
-                cols = st.columns([1.2, 0.9, 0.9, 1.0, 1.2, 1.0])
-                unit_label = "units" if t["ticker"].endswith("-USD") else "shares"
-                cols[0].write(f"**{display_asset_name(t['ticker'])}** ({t['ticker']}, {t['side']})\n\n{t['shares']} {unit_label}")
-                trade_digits = price_decimals(live_px)
-                cols[1].write(f"Entry: `${t['entry']:,.{trade_digits}f}`\n\nLive: `${live_px:,.{trade_digits}f}`")
-                cols[2].write(f"Stop: `${t['stop']:,.{trade_digits}f}`\n\nTarget: `${t['target']:,.{trade_digits}f}`")
-                cols[3].write(f"Unrealized:\n\n**${unrealized:+.2f}**")
-                exit_px = cols[4].number_input("Exit Price", value=float(live_px), key=f"ex_{t['id']}", format=f"%.{price_decimals(live_px)}f")
-                if cols[5].button("Close Trade", key=f"cl_{t['id']}", use_container_width=True):
-                    pnl = (exit_px - t["entry"]) * t["shares"] if t["side"] == "LONG" else (t["entry"] - exit_px) * t["shares"]
-                    t["exit"] = exit_px
-                    t["pnl"] = round(pnl, 2)
-                    t["closed_at"] = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M")
-                    t["status"] = "CLOSED"
-                    st.rerun()
+            info_heading("📂 Open Paper Positions", "Live/last-available mark, unrealized P&L and your planned stop/target. Enter an exit price to close and realize the simulated result.", 4)
+            for trade, live_px, unrealized in marked_positions:
+                trade_ticker = trade["ticker"]
+                digits = price_decimals(live_px)
+                unit = "units" if trade_ticker.endswith("-USD") else "shares"
+                stop_hit = live_px <= float(trade["stop"]) if trade["side"] == "LONG" else live_px >= float(trade["stop"])
+                target_hit = live_px >= float(trade["target"]) if trade["side"] == "LONG" else live_px <= float(trade["target"])
+                with st.container(border=True):
+                    h1, h2, h3, h4 = st.columns([1.3, 1, 1, 1])
+                    h1.markdown(f"**{display_asset_name(trade_ticker)}**  \n`{trade_ticker}` · {trade['side']} · {float(trade['shares']):,.6f} {unit}")
+                    h2.metric("Entry / Mark", f"${float(trade['entry']):,.{digits}f}", f"Mark ${live_px:,.{digits}f}")
+                    h3.metric("Stop / Target", f"${float(trade['stop']):,.{digits}f}", f"Target ${float(trade['target']):,.{digits}f}")
+                    h4.metric("Unrealized P&L", f"${unrealized:+,.2f}", help="Estimated open profit/loss before closing the simulated trade.")
+                    if stop_hit:
+                        st.warning("The latest available price has crossed your stop level. Review the quote and close the simulation if appropriate.")
+                    elif target_hit:
+                        st.success("The latest available price has reached your target level. Review the quote and close the simulation if appropriate.")
+                    x1, x2, x3 = st.columns([1.2, 1, 1])
+                    exit_key = f"paper_exit_{trade['id']}"
+                    exit_price = x1.number_input("Exit Price", min_value=0.000001, value=float(live_px if live_px > 0 else trade["entry"]), step=0.01 if not trade_ticker.endswith("-USD") else 0.000001, format=f"%.{digits}f", key=exit_key)
+                    x2.caption(f"Opened: {trade.get('time', '—')}  \nNotes: {trade.get('notes') or '—'}")
+                    if x3.button("Close Position", key=f"close_paper_{trade['id']}", use_container_width=True):
+                        if exit_price <= 0 or not np.isfinite(exit_price):
+                            st.error("Enter a valid exit price above zero.")
+                        else:
+                            pnl = (exit_price - float(trade["entry"])) * float(trade["shares"]) if trade["side"] == "LONG" else (float(trade["entry"]) - exit_price) * float(trade["shares"])
+                            trade["exit"] = float(exit_price)
+                            trade["pnl"] = round(pnl, 2)
+                            trade["closed_at"] = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M")
+                            trade["status"] = "CLOSED"
+                            st.session_state.paper_trades = normalized_records
+                            st.rerun()
 
         if closed_trades:
-            info_heading("📊 Progress Analytics & Closed History", "Closed paper-trade results, including total P&L, win rate, average win/loss and the cumulative equity curve.", 4)
-            cdf = pd.DataFrame(closed_trades)
-            
-            total_pnl = sum(t["pnl"] for t in closed_trades if t["pnl"] is not None)
-            wins = [t for t in closed_trades if t["pnl"] and t["pnl"] > 0]
-            losses = [t for t in closed_trades if t["pnl"] and t["pnl"] < 0]
-            win_rate = (len(wins) / len(closed_trades)) * 100 if closed_trades else 0
-            
-            pk1, pk2, pk3, pk4 = st.columns(4)
-            pk1.metric("Total P&L", f"${total_pnl:+,.2f}")
-            pk2.metric("Win Rate", f"{win_rate:.1f}%", f"{len(wins)} Wins / {len(losses)} Losses")
-            pk3.metric("Avg Win", f"${sum(w['pnl'] for w in wins)/len(wins):,.2f}" if wins else "$0.00")
-            pk4.metric("Avg Loss", f"${sum(l['pnl'] for l in losses)/len(losses):,.2f}" if losses else "$0.00")
-
+            info_heading("📊 Closed Trades & Performance", "Review realized simulated results. Win rate counts profitable closed trades divided by all closed trades, including break-even trades.", 4)
+            closed_sorted = sorted(closed_trades, key=lambda t: str(t.get("closed_at") or t.get("time") or ""))
+            cdf = pd.DataFrame(closed_sorted)
+            pnl_values = [float(t.get("pnl") or 0) for t in closed_sorted]
+            total_closed = len(closed_sorted)
+            wins = [v for v in pnl_values if v > 0]
+            losses = [v for v in pnl_values if v < 0]
+            win_rate = (len(wins) / total_closed) * 100 if total_closed else 0
+            avg_win = sum(wins) / len(wins) if wins else 0
+            avg_loss = sum(losses) / len(losses) if losses else 0
+            a1, a2, a3, a4 = st.columns(4)
+            a1.metric("Net Realized P&L", f"${sum(pnl_values):+,.2f}")
+            a2.metric("Win Rate", f"{win_rate:.1f}%", f"{len(wins)} wins · {len(losses)} losses")
+            a3.metric("Average Winner", f"${avg_win:+,.2f}")
+            a4.metric("Average Loser", f"${avg_loss:+,.2f}")
+            cdf["pnl"] = pd.to_numeric(cdf["pnl"], errors="coerce").fillna(0)
             cdf["cumulative_pnl"] = cdf["pnl"].cumsum()
-            fig_eq = px.line(
-                cdf, x="time", y="cumulative_pnl", 
-                title="📈 Cumulative Equity Curve (Progress Over Time)",
-                labels={"cumulative_pnl": "Net P&L ($)", "time": "Trade Time"},
-                markers=True
-            )
-            fig_eq.update_layout(
-                paper_bgcolor="#121824", plot_bgcolor="#121824",
-                font=dict(color="#f8fafc"), height=300,
-                xaxis=dict(gridcolor="#1e293b"), yaxis=dict(gridcolor="#1e293b")
-            )
-            fig_eq.update_traces(line_color="#10b981" if total_pnl >= 0 else "#ef4444", line_width=3)
-            st.plotly_chart(fig_eq, use_container_width=True)
+            eq = px.line(cdf, x="closed_at" if "closed_at" in cdf else "time", y="cumulative_pnl", title="Cumulative Realized P&L", markers=True)
+            eq.update_layout(paper_bgcolor="#121824", plot_bgcolor="#121824", font=dict(color="#f8fafc"), height=300, margin=dict(l=10, r=10, t=45, b=10), xaxis=dict(gridcolor="#1e293b"), yaxis=dict(gridcolor="#1e293b", title="P&L ($)"))
+            eq.update_traces(line_color="#10b981" if sum(pnl_values) >= 0 else "#ef4444", line_width=3)
+            st.plotly_chart(eq, use_container_width=True)
+            display_cols = [c for c in ["time", "closed_at", "ticker", "side", "entry", "exit", "stop", "target", "shares", "pnl", "notes"] if c in cdf.columns]
+            st.dataframe(cdf[display_cols], use_container_width=True, hide_index=True)
+            csv_buffer = io.StringIO()
+            cdf.to_csv(csv_buffer, index=False)
+            st.download_button("📥 Export Paper Journal (CSV)", csv_buffer.getvalue(), file_name=f"paper_trading_journal_{date.today()}.csv", mime="text/csv", key="export_paper_journal")
 
-            st.dataframe(
-                cdf[["time", "ticker", "side", "entry", "exit", "shares", "pnl", "notes"]],
-                use_container_width=True,
-                hide_index=True
-            )
+        if not normalized_records:
+            st.info("Your paper-trading desk is ready. Add a simulated trade above to start tracking positions and performance.")
+        elif not open_trades and not closed_trades:
+            st.info("No active or closed paper positions yet.")
 
-            col_exp, col_clr = st.columns([1, 1])
-            with col_exp:
-                csv_buffer = io.StringIO()
-                cdf.to_csv(csv_buffer, index=False)
-                st.download_button(
-                    "📥 Export Journal as CSV",
-                    csv_buffer.getvalue(),
-                    file_name=f"trading_journal_{date.today()}.csv",
-                    mime="text/csv"
-                )
-            with col_clr:
-                if st.button("🗑️ Clear Journal History"):
-                    st.session_state.paper_trades = []
-                    st.rerun()
-
-        if st.session_state.paper_trades and not closed_trades and not open_trades:
-            st.info("No active trades in journal.")
+        if normalized_records:
+            with st.expander("⚙️ Paper Journal Controls"):
+                st.caption("Clearing removes all simulated positions and history from this browser session.")
+                if st.button("Clear Paper Trading History", key="request_clear_paper_history"):
+                    st.session_state.confirm_clear_paper = True
+                if st.session_state.get("confirm_clear_paper", False):
+                    st.warning("Are you sure? This cannot be undone.")
+                    cc1, cc2 = st.columns(2)
+                    if cc1.button("Yes, clear all paper trades", type="primary", key="confirm_clear_paper_history"):
+                        st.session_state.paper_trades = []
+                        st.session_state.confirm_clear_paper = False
+                        st.rerun()
+                    if cc2.button("Cancel", key="cancel_clear_paper_history"):
+                        st.session_state.confirm_clear_paper = False
+                        st.rerun()
 
     except Exception as e:
         st.error(f"Something went wrong: {e}")
