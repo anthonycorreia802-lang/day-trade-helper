@@ -1,101 +1,86 @@
-import time
-from datetime import datetime
-
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 import yfinance as yf
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from datetime import datetime
+import time
 
+# ---------- Page setup ----------
 st.set_page_config(
-    page_title="Day Trade Helper – Buy/Sell Guide",
+    page_title="Day Trade Helper",
     page_icon="📈",
     layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
-st.title("Day Trading Buy / Sell Helper")
-st.caption("Educational tool only • Delayed free data • Not real-time • Not financial advice")
+# Custom CSS for cleaner look
+st.markdown("""
+<style>
+    .big-action {
+        font-size: 2.4rem !important;
+        font-weight: 800 !important;
+        text-align: center;
+        padding: 18px;
+        border-radius: 14px;
+        margin-bottom: 12px;
+    }
+    .buy { background: #0e7a3d; color: white; }
+    .sell { background: #9b1c1c; color: white; }
+    .watch { background: #1e3a5f; color: white; }
+    .metric-label { font-size: 0.85rem; color: #888; }
+    .stMetric { background: #0e1117; padding: 12px; border-radius: 10px; }
+    div[data-testid="stMetricValue"] { font-size: 1.6rem; }
+</style>
+""", unsafe_allow_html=True)
 
+# ---------- Sidebar (minimal) ----------
+with st.sidebar:
+    st.header("Settings")
+    ticker = st.text_input("Ticker", value="SPY").upper().strip()
+    interval = st.selectbox("Speed", ["1m (fastest free)", "5m", "15m"], index=0)
+    interval = interval.split()[0]          # clean value
+    risk_pct = st.slider("Risk %", 0.25, 1.0, 0.5, 0.25) / 100
+    rr_ratio = st.slider("Target R:R", 1.2, 3.0, 1.8, 0.1)
+    auto = st.checkbox("Auto-refresh (45s)", value=True)
+    st.caption("Free data is delayed. This is not true live data.")
 
-# ---------- Sidebar ----------
-st.sidebar.header("Settings")
-ticker = st.sidebar.text_input("Ticker", value="SPY").upper().strip()
-interval = st.sidebar.selectbox("Interval", ["1m", "5m", "15m"], index=1)
-lookback = st.sidebar.selectbox("Lookback", ["1d", "5d", "10d"], index=1)
-account_size = st.sidebar.number_input(
-    "Account size ($)", min_value=100.0, value=10_000.0, step=500.0
-)
-risk_pct = st.sidebar.slider("Risk per trade (%)", 0.25, 1.0, 0.5, 0.25) / 100
-rr_ratio = st.sidebar.slider("Target reward:risk", 1.2, 3.0, 1.8, 0.1)
-auto_refresh = st.sidebar.checkbox("Auto-refresh every 60 seconds", value=False)
-
-
-# ---------- Data helpers ----------
-@st.cache_data(ttl=60)
-def load_data(symbol: str, period: str, interval: str) -> pd.DataFrame:
-    """Download and normalize Yahoo Finance intraday data."""
-    effective_period = period
-    if interval == "1m" and period == "10d":
-        effective_period = "7d"
-
-    df = yf.download(
-        symbol,
-        period=effective_period,
-        interval=interval,
-        progress=False,
-        auto_adjust=True,
-        threads=False,
-    )
-
-    if df is None or df.empty:
-        return pd.DataFrame()
-
+# ---------- Data functions ----------
+@st.cache_data(ttl=30, show_spinner=False)
+def load_data(ticker, interval):
+    period = "1d" if interval == "1m" else "5d"
+    df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-
-    required = {"Open", "High", "Low", "Close", "Volume"}
-    if not required.issubset(df.columns):
-        return pd.DataFrame()
-
-    df = df[list(required)].copy()
-    df = df.apply(pd.to_numeric, errors="coerce")
     return df.dropna()
 
-
-def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
+def add_indicators(df):
     df = df.copy()
-
     typical = (df["High"] + df["Low"] + df["Close"]) / 3
     df["TP_Vol"] = typical * df["Volume"]
     df["Date"] = df.index.date
     df["Cum_Vol"] = df.groupby("Date")["Volume"].cumsum()
     df["Cum_TP_Vol"] = df.groupby("Date")["TP_Vol"].cumsum()
-    df["VWAP"] = df["Cum_TP_Vol"] / df["Cum_Vol"].replace(0, np.nan)
-
+    df["VWAP"] = df["Cum_TP_Vol"] / df["Cum_Vol"]
     df["EMA9"] = df["Close"].ewm(span=9, adjust=False).mean()
     df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
 
     delta = df["Close"].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
-
-    rs = avg_gain / avg_loss.replace(0, np.nan)
+    avg_gain = gain.ewm(alpha=1/14, min_periods=14, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/14, min_periods=14, adjust=False).mean()
+    rs = avg_gain / avg_loss
     df["RSI"] = 100 - (100 / (1 + rs))
-    df["RSI"] = df["RSI"].replace([np.inf, -np.inf], np.nan)
 
-    df["Vol_MA"] = df["Volume"].rolling(10).mean()
-    df["Range"] = df["High"] - df["Low"]
-    df["ATR"] = df["Range"].rolling(14).mean()
+    df["Vol_MA"] = df["Volume"].rolling(8).mean()
+    df["ATR"] = (df["High"] - df["Low"]).rolling(14).mean()
     return df
 
-
-def get_action(df: pd.DataFrame):
-    """Return the current mechanical setup and suggested long levels."""
-    if len(df) < 25:
-        return "WAIT", ["Not enough data yet"], None, None, None
+def decide_action(df):
+    if len(df) < 20:
+        return "WATCH", ["Waiting for more data…"], None, None, None
 
     latest = df.iloc[-1]
     prev = df.iloc[-2]
@@ -106,189 +91,151 @@ def get_action(df: pd.DataFrame):
     ema20 = float(latest["EMA20"])
     rsi = float(latest["RSI"])
     vol = float(latest["Volume"])
-    vol_ma = float(latest["Vol_MA"])
-
-    if not np.isfinite(rsi):
-        rsi = np.nan
+    vol_ma = float(latest["Vol_MA"]) if pd.notna(latest["Vol_MA"]) else vol
 
     reasons = []
+    action = "WATCH"
 
     above_vwap = price > vwap
     ema_bull = ema9 > ema20
-    reclaim = prev["Close"] <= prev["VWAP"] and price > vwap
-    vol_ok = vol > vol_ma
-    rsi_ok = np.isfinite(rsi) and 40 < rsi < 70
+    reclaim = float(prev["Close"]) <= float(prev["VWAP"]) and price > vwap
+    vol_ok = vol > vol_ma * 0.95
+    rsi_ok = 38 < rsi < 72
 
     long_setup = above_vwap and ema_bull and reclaim and vol_ok and rsi_ok
-
-    below_vwap = price < vwap
-    ema_bear = ema9 < ema20
-    rsi_overbought = np.isfinite(rsi) and rsi > 72
-    momentum_fail = below_vwap and ema_bear
+    momentum_fail = price < vwap and ema9 < ema20
+    overbought = rsi > 74 and above_vwap
 
     if long_setup:
         action = "BUY"
-        reasons.append("Price reclaimed VWAP with rising short-term momentum (EMA9 > EMA20)")
-        reasons.append("Volume is above its recent 10-bar average")
-        reasons.append(f"RSI is in a healthy range ({rsi:.1f})")
+        reasons = [
+            "Price just reclaimed VWAP",
+            "Short momentum (EMA9 > EMA20) is up",
+            f"Volume supportive • RSI {rsi:.0f}"
+        ]
     elif momentum_fail:
-        action = "SELL / AVOID LONG"
-        reasons.append("Price lost VWAP and the short-term EMAs turned bearish")
-    elif rsi_overbought and above_vwap:
-        action = "TAKE PROFIT / TIGHTEN STOP"
-        reasons.append(f"RSI is elevated ({rsi:.1f}); consider scaling out or trailing")
-    elif below_vwap:
-        action = "AVOID LONG / WAIT"
-        reasons.append("Price is below VWAP, so the current bias is not bullish")
+        action = "SELL / AVOID"
+        reasons = ["Price lost VWAP", "Short EMAs turned down"]
+    elif overbought:
+        action = "TAKE PROFIT"
+        reasons = [f"RSI is high ({rsi:.0f})", "Consider scaling out or tightening stop"]
+    elif price < vwap:
+        action = "AVOID LONG"
+        reasons = ["Price is below VWAP – no long bias"]
     else:
         action = "WATCH"
-        reasons.append("No clean pullback-reclaim setup is present")
+        reasons = ["No clean setup right now"]
 
-    atr = float(latest["ATR"])
-    if not np.isfinite(atr):
-        atr = price * 0.005
-
-    stop_dist = max(atr * 1.2, price * 0.003)
+    atr = float(latest["ATR"]) if pd.notna(latest["ATR"]) else price * 0.004
+    stop_dist = max(atr * 1.15, price * 0.0028)
     stop = price - stop_dist
     target = price + stop_dist * rr_ratio
+
     return action, reasons, stop, target, stop_dist
 
-
-# ---------- Main ----------
-if not ticker:
-    st.warning("Enter a ticker symbol in the sidebar.")
-    st.stop()
-
+# ---------- Main UI ----------
 try:
-    with st.spinner("Loading delayed market data…"):
-        raw = load_data(ticker, lookback, interval)
+    with st.spinner("Loading…"):
+        raw = load_data(ticker, interval)
 
     if raw.empty:
-        st.error("No data returned. Check the ticker or choose a longer lookback.")
+        st.error("No data. Check the ticker.")
         st.stop()
 
     df = add_indicators(raw)
-    action, reasons, stop, target, stop_dist = get_action(df)
+    action, reasons, stop, target, stop_dist = decide_action(df)
 
     latest = df.iloc[-1]
     price = float(latest["Close"])
     last_time = df.index[-1]
+    data_age = datetime.now(last_time.tzinfo) - last_time if last_time.tzinfo else None
 
-    if action == "BUY":
-        st.success(f"### ACTION: {action}")
-    elif "SELL" in action or "AVOID" in action:
-        st.error(f"### ACTION: {action}")
-    else:
-        st.info(f"### ACTION: {action}")
+    # ===== BIG ACTION BANNER =====
+    css_class = "buy" if action == "BUY" else ("sell" if "SELL" in action or "AVOID" in action else "watch")
+    st.markdown(f'<div class="big-action {css_class}">{action}</div>', unsafe_allow_html=True)
 
-    timestamp_label = last_time.strftime("%Y-%m-%d %H:%M") if hasattr(last_time, "strftime") else str(last_time)
-    st.write(f"**Last bar time (delayed):** {timestamp_label}")
-    st.write(f"**Latest close (delayed):** ${price:.2f}")
+    # ===== KEY NUMBERS =====
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Price", f"${price:.2f}")
+    c2.metric("VWAP", f"${float(latest['VWAP']):.2f}")
+    c3.metric("RSI", f"{float(latest['RSI']):.0f}")
+    c4.metric("EMA9", f"${float(latest['EMA9']):.2f}")
+    c5.metric("Data age", f"{int(data_age.total_seconds()//60)} min" if data_age else "—")
 
-    st.subheader("Why this action?")
-    for reason in reasons:
-        st.write(f"- {reason}")
+    # ===== REASONS + LEVELS =====
+    left, right = st.columns([1.1, 1])
 
-    if stop is not None and target is not None:
-        risk_dollars = account_size * risk_pct
-        shares = int(risk_dollars // stop_dist) if stop_dist > 0 else 0
+    with left:
+        st.markdown("#### Why?")
+        for r in reasons:
+            st.markdown(f"- {r}")
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Last price", f"${price:.2f}")
-        col2.metric("Suggested stop", f"${stop:.2f}")
-        col3.metric(f"Target ({rr_ratio:.1f}R)", f"${target:.2f}")
-        col4.metric("Shares at risk", f"{shares:,}")
+    with right:
+        if stop and target:
+            st.markdown("#### Suggested levels")
+            st.markdown(f"**Stop** → `${stop:.2f}`")
+            st.markdown(f"**Target ({rr_ratio:.1f}R)** → `${target:.2f}`")
+            st.markdown(f"**Risk per share** → `${stop_dist:.2f}`")
+            st.caption(f"Size = (Account × {risk_pct*100:.1f}%) ÷ ${stop_dist:.2f}")
 
-        st.caption(
-            f"Position size: {shares:,} shares using ${risk_dollars:,.2f} "
-            f"({risk_pct * 100:.2f}% of the account) and a ${stop_dist:.2f} stop distance."
-        )
-
-    with st.expander("Strategy checklist (long)"):
-        latest = df.iloc[-1]
+    # ===== CHECKLIST =====
+    with st.expander("Setup checklist", expanded=False):
         prev = df.iloc[-2]
-        rsi_value = latest["RSI"]
         checks = {
-            "Price > VWAP": latest["Close"] > latest["VWAP"],
-            "EMA9 > EMA20": latest["EMA9"] > latest["EMA20"],
-            "Just reclaimed VWAP": prev["Close"] <= prev["VWAP"] and latest["Close"] > latest["VWAP"],
-            "Volume > 10-bar average": latest["Volume"] > latest["Vol_MA"],
-            "RSI between 40–70": bool(pd.notna(rsi_value) and 40 < rsi_value < 70),
+            "Price > VWAP": price > float(latest["VWAP"]),
+            "EMA9 > EMA20": float(latest["EMA9"]) > float(latest["EMA20"]),
+            "Just reclaimed VWAP": float(prev["Close"]) <= float(prev["VWAP"]) and price > float(latest["VWAP"]),
+            "Volume OK": float(latest["Volume"]) > float(latest["Vol_MA"]) * 0.95,
+            "RSI 38–72": 38 < float(latest["RSI"]) < 72,
         }
-        for name, ok in checks.items():
-            st.write(("✅" if ok else "❌") + f"  {name}")
+        cols = st.columns(5)
+        for i, (name, ok) in enumerate(checks.items()):
+            cols[i].markdown(f"{'✅' if ok else '❌'}  \n{name}")
 
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        shared_xaxes=True,
-        row_heights=[0.72, 0.28],
-        vertical_spacing=0.03,
-    )
+    # ===== CHART =====
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        row_heights=[0.75, 0.25], vertical_spacing=0.02)
 
-    fig.add_trace(
-        go.Candlestick(
-            x=df.index,
-            open=df["Open"],
-            high=df["High"],
-            low=df["Low"],
-            close=df["Close"],
-            name="Price",
-        ),
-        row=1,
-        col=1,
-    )
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df["Open"], high=df["High"],
+        low=df["Low"], close=df["Close"], name="Price",
+        increasing_line_color="#26a69a", decreasing_line_color="#ef5350"
+    ), row=1, col=1)
 
-    fig.add_trace(
-        go.Scatter(x=df.index, y=df["VWAP"], name="VWAP", line=dict(color="blue", width=1.5)),
-        row=1,
-        col=1,
-    )
-    fig.add_trace(
-        go.Scatter(x=df.index, y=df["EMA9"], name="EMA9", line=dict(width=1)),
-        row=1,
-        col=1,
-    )
-    fig.add_trace(
-        go.Scatter(x=df.index, y=df["EMA20"], name="EMA20", line=dict(width=1)),
-        row=1,
-        col=1,
-    )
+    fig.add_trace(go.Scatter(x=df.index, y=df["VWAP"], name="VWAP",
+                             line=dict(color="#42a5f5", width=2)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df["EMA9"], name="EMA9",
+                             line=dict(color="#ffca28", width=1.5)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df["EMA20"], name="EMA20",
+                             line=dict(color="#ab47bc", width=1.5)), row=1, col=1)
 
-    fig.add_trace(
-        go.Bar(
-            x=df.index,
-            y=df["Volume"],
-            name="Volume",
-            marker_color="rgba(100,100,100,0.4)",
-        ),
-        row=2,
-        col=1,
-    )
+    colors = ["#26a69a" if c >= o else "#ef5350" for c, o in zip(df["Close"], df["Open"])]
+    fig.add_trace(go.Bar(x=df.index, y=df["Volume"], name="Vol",
+                         marker_color=colors, opacity=0.5), row=2, col=1)
 
     fig.update_layout(
+        height=520,
+        margin=dict(l=0, r=0, t=30, b=0),
         xaxis_rangeslider_visible=False,
-        height=650,
-        title=f"{ticker} | {interval} | Last update: {timestamp_label}",
-        margin=dict(l=10, r=10, t=40, b=10),
+        showlegend=True,
+        legend=dict(orientation="h", y=1.08),
+        template="plotly_dark"
     )
-    fig.update_yaxes(title_text="Price", row=1, col=1)
-    fig.update_yaxes(title_text="Volume", row=2, col=1)
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_yaxes(title_text="", row=1, col=1)
+    fig.update_yaxes(title_text="", row=2, col=1)
 
-    if auto_refresh:
-        st.caption("Auto-refreshing in 60 seconds…")
-        time.sleep(60)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    # Footer
+    st.caption(f"Last bar: {last_time}  •  Free data is delayed  •  Educational use only")
+
+    # Auto refresh
+    if auto:
+        time.sleep(45)
         st.rerun()
 
-except Exception as exc:
-    st.error(f"Error loading or processing data: {exc}")
+except Exception as e:
+    st.error(f"Something went wrong: {e}")
 
 st.markdown("---")
-st.warning("""
-**Critical warnings**
-- Yahoo Finance data is delayed and may be unavailable or inaccurate.
-- This is a mechanical educational strategy, not a recommendation or guarantee.
-- Use a hard stop and never risk money you cannot afford to lose.
-- Paper trade first. Many retail day traders lose money over time.
-""")
+st.warning("This is **not** true real-time data and **not** financial advice. Most day traders lose money. Always use hard stops and never risk money you can’t afford to lose.")
