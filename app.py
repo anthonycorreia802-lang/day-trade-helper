@@ -114,7 +114,7 @@ def info_heading(label, explanation, level=3):
 # ---------- Yahoo Finance symbol search / recommendations ----------
 @st.cache_data(ttl=900, show_spinner=False)
 def search_stock_symbols(query):
-    """Search Yahoo Finance's current symbol catalog for matching equities/ETFs."""
+    """Search Yahoo Finance for equities, ETFs, and cryptocurrency pairs."""
     query = str(query or "").strip()
     if len(query) < 1:
         return []
@@ -125,24 +125,53 @@ def search_stock_symbols(query):
         for item in quotes:
             quote_type = str(item.get("quoteType", "")).upper()
             symbol = str(item.get("symbol", "")).upper()
-            if symbol and quote_type in {"EQUITY", "ETF"}:
+            if symbol and quote_type in {"EQUITY", "ETF", "CRYPTOCURRENCY", "CRYPTO"}:
                 matches.append({
                     "symbol": symbol,
-                    "name": item.get("shortname") or item.get("longname") or symbol,
-                    "type": quote_type
+                    "name": item.get("shortname") or item.get("longname") or ASSET_NAMES.get(symbol, symbol),
+                    "type": "CRYPTO" if quote_type in {"CRYPTOCURRENCY", "CRYPTO"} else quote_type
                 })
         return matches
     except Exception:
         return []
 
-RECOMMENDATION_UNIVERSE = [
-    "SPY", "QQQ", "IWM", "DIA", "AAPL", "MSFT", "NVDA", "AMD",
-    "AMZN", "META", "GOOGL", "TSLA", "AVGO", "NFLX", "JPM",
-    "XOM", "LLY", "COST", "PLTR", "ORCL"
+ASSET_NAMES = {
+    "SPY": "SPDR S&P 500 ETF", "QQQ": "Invesco QQQ Trust", "IWM": "iShares Russell 2000 ETF",
+    "DIA": "SPDR Dow Jones Industrial Average ETF", "AAPL": "Apple Inc.", "MSFT": "Microsoft Corporation",
+    "NVDA": "NVIDIA Corporation", "AMD": "Advanced Micro Devices", "AMZN": "Amazon.com Inc.",
+    "META": "Meta Platforms Inc.", "GOOGL": "Alphabet Inc.", "TSLA": "Tesla Inc.",
+    "AVGO": "Broadcom Inc.", "NFLX": "Netflix Inc.", "JPM": "JPMorgan Chase & Co.",
+    "XOM": "Exxon Mobil Corporation", "LLY": "Eli Lilly and Company", "COST": "Costco Wholesale",
+    "PLTR": "Palantir Technologies", "ORCL": "Oracle Corporation",
+    "BTC-USD": "Bitcoin", "ETH-USD": "Ethereum", "SOL-USD": "Solana", "XRP-USD": "XRP",
+    "BNB-USD": "BNB", "DOGE-USD": "Dogecoin", "ADA-USD": "Cardano", "AVAX-USD": "Avalanche",
+    "LINK-USD": "Chainlink", "LTC-USD": "Litecoin", "BCH-USD": "Bitcoin Cash", "DOT-USD": "Polkadot"
+}
+STOCK_RECOMMENDATION_UNIVERSE = [
+    "SPY", "QQQ", "IWM", "DIA", "AAPL", "MSFT", "NVDA", "AMD", "AMZN", "META",
+    "GOOGL", "TSLA", "AVGO", "NFLX", "JPM", "XOM", "LLY", "COST", "PLTR", "ORCL"
 ]
+CRYPTO_RECOMMENDATION_UNIVERSE = [
+    "BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "BNB-USD", "DOGE-USD",
+    "ADA-USD", "AVAX-USD", "LINK-USD", "LTC-USD", "BCH-USD", "DOT-USD"
+]
+RECOMMENDATION_UNIVERSE = STOCK_RECOMMENDATION_UNIVERSE + CRYPTO_RECOMMENDATION_UNIVERSE
+
+
+def display_asset_name(symbol):
+    """Readable asset name for known symbols; fall back to Yahoo Finance metadata."""
+    return ASSET_NAMES.get(str(symbol).upper(), str(symbol).upper())
+
+
+def price_decimals(price):
+    """Use extra precision for low-priced crypto assets."""
+    try:
+        return 2 if abs(float(price)) >= 1 else 6
+    except (TypeError, ValueError):
+        return 2
 
 def scan_recommendation_candidates(scan_interval="15m", prepost=False, rr_ratio=1.8):
-    """Rank a liquid, predefined US-stock universe using transparent technical rules."""
+    """Rank a curated universe of liquid US stocks/ETFs and major crypto pairs."""
     rows = []
     for symbol in RECOMMENDATION_UNIVERSE:
         try:
@@ -161,20 +190,23 @@ def scan_recommendation_candidates(scan_interval="15m", prepost=False, rr_ratio=
             current_price = float(stats["price"])
             entry_price = float(stats["ideal_buy"])
             target_price = float(stats["ideal_sell"])
-            target_pct = ((target_price / max(entry_price, 0.01)) - 1) * 100
+            target_pct = ((target_price / max(entry_price, 0.000001)) - 1) * 100
             if side == "SHORT":
-                target_pct = ((entry_price / max(target_price, 0.01)) - 1) * 100
+                target_pct = ((entry_price / max(target_price, 0.000001)) - 1) * 100
             day_change_pct = float(daily.get("change_pct", 0.0)) if daily else 0.0
+            digits = price_decimals(current_price)
             rows.append({
+                "Asset Name": display_asset_name(symbol),
                 "Symbol": symbol,
-                "Price": round(current_price, 2),
+                "Asset Type": "Crypto" if symbol.endswith("-USD") else "Stock / ETF",
+                "Price": round(current_price, digits),
                 "Today %": round(day_change_pct, 2),
                 "Bias": "Bullish" if side == "LONG" else "Bearish",
                 "Score": f'{stats["score"]}/5',
-                "Target Price": round(target_price, 2),
+                "Target Price": round(target_price, digits),
                 "Potential %": round(target_pct, 2),
-                "Entry": round(entry_price, 2),
-                "Stop": round(stats["stop"], 2),
+                "Entry": round(entry_price, digits),
+                "Stop": round(stats["stop"], digits),
                 "RSI": round(stats["rsi"], 1),
                 "_score": int(stats["score"]),
                 "_reward_pct": float(target_pct),
@@ -187,7 +219,7 @@ def scan_recommendation_candidates(scan_interval="15m", prepost=False, rr_ratio=
 
 # ---------- Session State ----------
 defaults = {
-    "watchlist": ["SPY", "QQQ", "AAPL", "TSLA", "NVDA"],
+    "watchlist": ["SPY", "QQQ", "AAPL", "TSLA", "NVDA", "BTC-USD", "ETH-USD"],
     "active_ticker": "SPY",
     "paper_trades": [],
     "account_size": 25000.0,
@@ -197,6 +229,10 @@ defaults = {
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
+# Add the two major crypto pairs to existing saved watchlists without removing user symbols.
+for crypto_symbol in ["BTC-USD", "ETH-USD"]:
+    if crypto_symbol not in st.session_state.watchlist:
+        st.session_state.watchlist.append(crypto_symbol)
 
 # ---------- Market Session Helper ----------
 def get_market_session():
@@ -340,6 +376,7 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
     vol = float(latest["Volume"])
     vol_ma = float(latest["Vol_MA"]) if pd.notna(latest["Vol_MA"]) and latest["Vol_MA"] > 0 else max(vol, 1.0)
     atr = max(atr if np.isfinite(atr) else price * 0.003, price * 0.001)
+    digits = price_decimals(price)
 
     recent = df.tail(45)
     swing_high = float(recent["High"].max())
@@ -359,10 +396,10 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
     stop_dist = max(atr * 1.25, price * 0.0025)
     long_entry = min(price, max(vwap, min(ema9, price)))
     short_entry = max(price, min(vwap, max(ema9, price)))
-    long_stop = round(long_entry - stop_dist, 2)
-    short_stop = round(short_entry + stop_dist, 2)
-    long_target = round(long_entry + stop_dist * float(rr_ratio), 2)
-    short_target = round(short_entry - stop_dist * float(rr_ratio), 2)
+    long_stop = round(max(0.000001, long_entry - stop_dist), digits)
+    short_stop = round(short_entry + stop_dist, digits)
+    long_target = round(long_entry + stop_dist * float(rr_ratio), digits)
+    short_target = round(max(0.000001, short_entry - stop_dist * float(rr_ratio)), digits)
 
     # Keep legacy output keys while making their meaning direction-aware.
     if long_score >= 4 and long_score > short_score and price <= long_entry + atr * 0.35:
@@ -370,51 +407,51 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         reasons = [
             f"Long setup score is {long_score}/5 with price above VWAP",
             "EMA 9 is above EMA 20 and momentum is not overextended",
-            f"Illustrative long target ${long_target:.2f}; stop ${long_stop:.2f}"
+            f"Illustrative long target ${long_target:,.{digits}f}; stop ${long_stop:,.{digits}f}"
         ]
         side, score = "LONG", long_score
-        ideal_buy, stop, ideal_sell = round(long_entry, 2), long_stop, long_target
+        ideal_buy, stop, ideal_sell = round(long_entry, digits), long_stop, long_target
     elif short_score >= 4 and short_score > long_score:
         action = "🔻 SHORT / SELL NOW"
         reasons = [
             f"Short setup score is {short_score}/5 with price below VWAP",
             "EMA 9 is below EMA 20 and downside momentum is aligned",
-            f"Illustrative short target ${short_target:.2f}; stop ${short_stop:.2f}"
+            f"Illustrative short target ${short_target:,.{digits}f}; stop ${short_stop:,.{digits}f}"
         ]
         side, score = "SHORT", short_score
-        ideal_buy, stop, ideal_sell = round(short_entry, 2), short_stop, short_target
+        ideal_buy, stop, ideal_sell = round(short_entry, digits), short_stop, short_target
     elif long_score >= 3 and long_score > short_score:
-        action = f"⏳ WAIT FOR PULLBACK TO ${long_entry:.2f}"
+        action = f"⏳ WAIT FOR PULLBACK TO ${long_entry:,.{digits}f}"
         reasons = ["Bullish conditions are developing, but entry confirmation is incomplete.",
-                   f"Watch the long entry area near ${long_entry:.2f}."]
+                   f"Watch the long entry area near ${long_entry:,.{digits}f}."]
         side, score = "LONG", long_score
-        ideal_buy, stop, ideal_sell = round(long_entry, 2), long_stop, long_target
+        ideal_buy, stop, ideal_sell = round(long_entry, digits), long_stop, long_target
     elif short_score >= 3 and short_score > long_score:
-        action = f"⏳ WAIT FOR SHORT SETUP NEAR ${short_entry:.2f}"
+        action = f"⏳ WAIT FOR SHORT SETUP NEAR ${short_entry:,.{digits}f}"
         reasons = ["Bearish conditions are developing, but entry confirmation is incomplete.",
-                   f"Watch the short entry area near ${short_entry:.2f}."]
+                   f"Watch the short entry area near ${short_entry:,.{digits}f}."]
         side, score = "SHORT", short_score
-        ideal_buy, stop, ideal_sell = round(short_entry, 2), short_stop, short_target
+        ideal_buy, stop, ideal_sell = round(short_entry, digits), short_stop, short_target
     else:
         action = "🛡️ WAIT (NO CLEAR SETUP)"
         reasons = ["Trend, momentum, and volume are not sufficiently aligned.",
-                   f"VWAP is ${vwap:.2f}; wait for a confirmed reclaim or rejection."]
+                   f"VWAP is ${vwap:,.{digits}f}; wait for a confirmed reclaim or rejection."]
         side, score = "None", max(long_score, short_score)
-        ideal_buy, stop, ideal_sell = round(price, 2), round(price - stop_dist, 2), round(price + stop_dist * float(rr_ratio), 2)
+        ideal_buy, stop, ideal_sell = round(price, digits), round(price - stop_dist, digits), round(price + stop_dist * float(rr_ratio), digits)
 
     mins_per_bar = {"1m": 1, "2m": 2, "5m": 5, "15m": 15, "30m": 30, "60m": 60}.get(interval, 1)
     hourly_expected_move = atr * np.sqrt(60 / mins_per_bar) * 0.55
     bias_mult = 1.0 if (above_vwap and ema_up) else (-1.0 if (below_vwap and ema_down) else 0.0)
-    hourly_target = round(price + hourly_expected_move * bias_mult, 2)
+    hourly_target = round(price + hourly_expected_move * bias_mult, digits)
 
     if daily_stats:
         d_atr = max(float(daily_stats["daily_atr"]), 0.0)
         anchor = float(daily_stats["today_open"])
-        daily_target = round(price + d_atr * 0.35 * bias_mult, 2)
-        daily_range = (round(anchor - d_atr * 0.75, 2), round(anchor + d_atr * 0.75, 2))
+        daily_target = round(price + d_atr * 0.35 * bias_mult, digits)
+        daily_range = (round(anchor - d_atr * 0.75, digits), round(anchor + d_atr * 0.75, digits))
     else:
-        daily_target = round(price + hourly_expected_move * 2.5 * bias_mult, 2)
-        daily_range = (round(swing_low, 2), round(swing_high, 2))
+        daily_target = round(price + hourly_expected_move * 2.5 * bias_mult, digits)
+        daily_range = (round(swing_low, digits), round(swing_high, digits))
 
     return {
         "action": action, "reasons": reasons, "side": side, "score": score,
@@ -498,12 +535,14 @@ def render_top_market_candidates(compact=False):
     bullish = [row for row in candidates if row["_side"] == "LONG"]
     bearish = [row for row in candidates if row["_side"] == "SHORT"]
     if compact:
-        for row in candidates[:6]:
+        for row in candidates[:8]:
             tint = "🟢" if row["_side"] == "LONG" else "🔴"
+            digits = price_decimals(row["Price"])
             st.markdown(
-                f'<div style="padding:7px 8px;margin:4px 0;border:1px solid #293b52;border-radius:8px;background:#111d2b">'
-                f'<b>{tint} {row["Symbol"]}</b> <span style="float:right">${row["Price"]:,.2f}</span><br>'
-                f'<span style="color:#9fb1c8;font-size:11px">{row["Bias"]} · {row["Today %"]:+.2f}% today · Score {row["Score"]} · Target {row["Potential %"]:+.2f}%</span></div>',
+                f'<div style="padding:8px 9px;margin:5px 0;border:1px solid #293b52;border-radius:8px;background:#111d2b">'
+                f'<div style="font-weight:750;color:#f0f6ff;line-height:1.25">{tint} {row["Asset Name"]}</div>'
+                f'<div style="display:flex;justify-content:space-between;gap:8px;margin-top:3px"><b style="color:#8ed8ff">{row["Symbol"]}</b><b>${row["Price"]:,.{digits}f}</b></div>'
+                f'<span style="color:#9fb1c8;font-size:11px">{row["Asset Type"]} · {row["Bias"]} · {row["Today %"]:+.2f}% today · Score {row["Score"]} · Target {row["Potential %"]:+.2f}%</span></div>',
                 unsafe_allow_html=True
             )
         choices = [row["Symbol"] for row in candidates]
@@ -516,25 +555,19 @@ def render_top_market_candidates(compact=False):
     if bullish:
         st.markdown("#### 🟢 Bullish candidates")
         bullish_df = pd.DataFrame(bullish[:8]).drop(columns=["_score", "_reward_pct", "_side"], errors="ignore")
-        st.dataframe(bullish_df, use_container_width=True, hide_index=True, column_config={
-            "Price": st.column_config.NumberColumn("Current price", format="$%.2f"),
-            "Today %": st.column_config.NumberColumn("Day change", format="%+.2f%%"),
-            "Target Price": st.column_config.NumberColumn("Target price", format="$%.2f"),
-            "Potential %": st.column_config.NumberColumn("Target distance", format="%+.2f%%"),
-            "Entry": st.column_config.NumberColumn("Entry area", format="$%.2f"),
-            "Stop": st.column_config.NumberColumn("Stop", format="$%.2f"),
-        })
+        for col in ["Price", "Target Price", "Entry", "Stop"]:
+            bullish_df[col] = bullish_df[col].map(lambda value: f"${float(value):,.{price_decimals(value)}f}")
+        bullish_df = bullish_df.rename(columns={"Price": "Current Price", "Today %": "Day Change %", "Target Price": "Target Price", "Potential %": "Target Distance %", "Entry": "Entry Area"})
+        st.dataframe(bullish_df, use_container_width=True, hide_index=True)
     else:
         st.info("No bullish candidates currently meet the scanner's minimum technical score.")
     if bearish:
         with st.expander("🔻 Bearish / short candidates", expanded=False):
             bearish_df = pd.DataFrame(bearish[:6]).drop(columns=["_score", "_reward_pct", "_side"], errors="ignore")
-            st.dataframe(bearish_df, use_container_width=True, hide_index=True, column_config={
-                "Price": st.column_config.NumberColumn("Current price", format="$%.2f"),
-                "Today %": st.column_config.NumberColumn("Day change", format="%+.2f%%"),
-                "Target Price": st.column_config.NumberColumn("Target price", format="$%.2f"),
-                "Potential %": st.column_config.NumberColumn("Target distance", format="%+.2f%%"),
-            })
+            for col in ["Price", "Target Price", "Entry", "Stop"]:
+                bearish_df[col] = bearish_df[col].map(lambda value: f"${float(value):,.{price_decimals(value)}f}")
+            bearish_df = bearish_df.rename(columns={"Price": "Current Price", "Today %": "Day Change %", "Target Price": "Target Price", "Potential %": "Target Distance %", "Entry": "Entry Area"})
+            st.dataframe(bearish_df, use_container_width=True, hide_index=True)
     choices = [row["Symbol"] for row in candidates]
     pick_col, add_col = st.columns([2, 1])
     with pick_col:
@@ -559,12 +592,13 @@ with st.sidebar:
     )
 
     # Stock discovery and market candidates sit at the top of the left rail.
-    info_heading("🔎 Find a Stock", "Search by company name or ticker. Choose a result to load it into the dashboard or add it to your watchlist.", 3)
-    sidebar_query = st.text_input("Ticker or company", placeholder="Apple, NVDA, Microsoft…", key="sidebar_symbol_search")
+    info_heading("🔎 Find Stocks & Crypto", "Search stocks, ETFs, or crypto by name or ticker (for example Apple, NVDA, Bitcoin, or BTC-USD). Choose a result to load it or add it to your watchlist.", 3)
+    sidebar_query = st.text_input("Ticker or company", placeholder="Apple, NVDA, Bitcoin, BTC-USD…", key="sidebar_symbol_search")
     if sidebar_query.strip():
         sidebar_matches = search_stock_symbols(sidebar_query)
         if sidebar_matches:
-            sidebar_labels = [f'{x["symbol"]} — {x["name"]}' for x in sidebar_matches]
+            ASSET_NAMES.update({x["symbol"]: x["name"] for x in sidebar_matches})
+            sidebar_labels = [f'{x["name"]} — {x["symbol"]} ({x["type"]})' for x in sidebar_matches]
             sidebar_choice = st.selectbox("Matching symbols", sidebar_labels, key="sidebar_symbol_match")
             sidebar_symbol = sidebar_matches[sidebar_labels.index(sidebar_choice)]["symbol"]
             sb_load, sb_add = st.columns(2)
@@ -577,12 +611,12 @@ with st.sidebar:
                 st.session_state.active_ticker = sidebar_symbol
                 st.rerun()
         else:
-            st.caption("No symbols found. Try a ticker or another spelling.")
+            st.caption("No symbols found. Try a company name, coin name, or Yahoo symbol such as BTC-USD or ETH-USD.")
 
     render_top_market_candidates(compact=True)
 
     info_heading("⭐ Your Watchlist", "Your saved symbols. Select one to load its live chart and trading analysis.", 3)
-    manual_sym = st.text_input("Add ticker manually", placeholder="e.g. META", key="manual_watch_symbol").upper().strip()
+    manual_sym = st.text_input("Add ticker manually", placeholder="e.g. META or BTC-USD", key="manual_watch_symbol").upper().strip()
     if st.button("➕ Add manual ticker", key="add_manual_symbol", use_container_width=True) and manual_sym:
         if manual_sym not in st.session_state.watchlist:
             st.session_state.watchlist.append(manual_sym)
@@ -591,7 +625,7 @@ with st.sidebar:
 
     for sym in st.session_state.watchlist:
         btn_type = "primary" if sym == st.session_state.active_ticker else "secondary"
-        if st.button(f"⚡ {sym}", key=f"btn_{sym}", type=btn_type, use_container_width=True):
+        if st.button(f"⚡ {display_asset_name(sym)} · {sym}", key=f"btn_{sym}", type=btn_type, use_container_width=True):
             st.session_state.active_ticker = sym
             st.rerun()
 
@@ -606,8 +640,8 @@ with st.sidebar:
     trend_interval = st.selectbox("Trend Confirmation Timeframe", timeframe_options, index=3,
                                   format_func=lambda value: "1h (60m)" if value == "60m" else value,
                                   help="Independent timeframe used to check the broader short-term trend.")
-    include_247 = st.checkbox("Include Pre/Post-Market", value=True,
-                              help="Include extended US trading hours when Yahoo Finance provides them.")
+    include_247 = st.checkbox("Include Extended Hours (Stocks / ETFs)", value=True,
+                              help="Includes pre-market and after-hours bars for supported stocks and ETFs. Crypto trades 24/7 and does not use this setting.")
     st.session_state.account_size = st.number_input("Account Size ($)", min_value=50.0, max_value=1000000.0,
                                                      value=st.session_state.account_size, step=500.0,
                                                      help="Paper account value used for position sizing. No real funds are connected.")
@@ -636,7 +670,7 @@ def render_dashboard():
     try:
         df_raw = get_intraday_data(ticker, interval, prepost=include_247)
         if df_raw.empty:
-            st.error("Could not load data. Check the stock symbol.")
+            st.error("Could not load market data. Check the ticker; crypto symbols usually use the -USD format (for example BTC-USD).")
             return
 
         df = add_indicators(df_raw)
@@ -648,7 +682,7 @@ def render_dashboard():
         
         if "BUY NOW" in sig["action"] or "SHORT" in sig["action"]:
             if st.session_state.last_alert_action != sig["action"]:
-                st.toast(f"🚨 ALERT: {sig['action']} on {ticker} @ ${price:.2f}!", icon="⚡")
+                st.toast(f"🚨 ALERT: {sig['action']} on {ticker} @ ${price:,.{price_decimals(price)}f}!", icon="⚡")
                 st.session_state.last_alert_action = sig["action"]
 
         last_bar_time = df.index[-1]
@@ -667,7 +701,7 @@ def render_dashboard():
         for trade in st.session_state.paper_trades:
             if trade.get("status") == "OPEN" and trade.get("time", "").startswith(today):
                 mark = price if trade.get("ticker") == ticker else (get_fast_quote(trade["ticker"]) or trade["entry"])
-                qty = int(trade.get("shares", 0))
+                qty = float(trade.get("shares", 0))
                 if trade.get("side") == "LONG":
                     today_unrealized += (mark - trade["entry"]) * qty
                 else:
@@ -675,7 +709,9 @@ def render_dashboard():
         today_pnl = today_realized + today_unrealized
         limit_hit = today_pnl <= -st.session_state.daily_loss_limit
 
-        st.markdown(f"## ⚡ {ticker} — ${price:.2f}")
+        ticker_digits = price_decimals(price)
+        asset_name = display_asset_name(ticker)
+        st.markdown(f"## ⚡ {asset_name} ({ticker}) — ${price:,.{ticker_digits}f}")
         st.caption(f"Chart: {interval}  •  Trend confirmation: {'1h' if trend_interval == '60m' else trend_interval}")
         st.caption(
             f"Session: **{session_label}**  •  EST Time: {now_est.strftime('%I:%M:%S %p')}  •  "
@@ -690,8 +726,8 @@ def render_dashboard():
 
         # Metrics Row with Info Tooltips
         c1, c2, c3 = st.columns(3)
-        c1.metric("Current Price", f"${price:.2f}", help="The latest available quote. Yahoo Finance data may be delayed.")
-        c2.metric("VWAP (Fair Value)", f"${sig['vwap']:.2f}", help="Volume-Weighted Average Price; a session reference, not a prediction.")
+        c1.metric("Current Price", f"${price:,.{ticker_digits}f}", help="The latest available quote. Yahoo Finance data may be delayed.")
+        c2.metric("VWAP (Fair Value)", f"${sig['vwap']:,.{ticker_digits}f}", help="Volume-Weighted Average Price; a session reference, not a prediction.")
         c3.metric("RSI (Momentum)", f"{sig['rsi']:.0f}", help="Momentum gauge from 0 to 100. It can remain high or low during strong trends.")
         c4, c5 = st.columns(2)
         c4.metric("Setup Score", f"{sig['score']}/5", help="How many of the five technical checks are met. This is not a probability of success.")
@@ -704,10 +740,10 @@ def render_dashboard():
         if dash_mode == "Advanced (Pro)":
             info_heading("🔬 Advanced Pro Telemetry", "Additional technical readings: ATR measures volatility, volume versus average compares activity, and EMA spread shows trend separation.", 5)
             ac1, ac2, ac3, ac4 = st.columns(4)
-            ac1.metric("ATR (Volatility)", f"${df.iloc[-1]['ATR']:.2f}", help="Average True Range measures how much the stock typically moves per candle.")
+            ac1.metric("ATR (Volatility)", f"${df.iloc[-1]['ATR']:,.{ticker_digits}f}", help="Average True Range measures how much the stock typically moves per candle.")
             ac2.metric("Volume vs MA", f"{df.iloc[-1]['Volume'] / max(df.iloc[-1]['Vol_MA'], 1):.2f}x", help="Current volume compared to its 8-period average. Higher means stronger interest.")
-            ac3.metric("EMA 9 / EMA 20 Spread", f"${df.iloc[-1]['EMA9'] - df.iloc[-1]['EMA20']:+.2f}", help="Distance between short-term trend averages.")
-            ac4.metric("Session High / Low", f"${df.tail(45)['High'].max():.2f} / ${df.tail(45)['Low'].min():.2f}", help="Highest and lowest prices reached in the current trading window.")
+            ac3.metric("EMA 9 / EMA 20 Spread", f"${df.iloc[-1]['EMA9'] - df.iloc[-1]['EMA20']:+,.{ticker_digits}f}", help="Distance between short-term trend averages.")
+            ac4.metric("Session High / Low", f"${df.tail(45)['High'].max():,.{ticker_digits}f} / ${df.tail(45)['Low'].min():,.{ticker_digits}f}", help="Highest and lowest prices reached in the current trading window.")
 
         info_heading("🎯 Live Price Targets & Trade Zones", "Illustrative entry, stop and target levels calculated from the selected chart interval and reward-to-risk setting.", 4)
         t1, t2, t3, t4 = st.columns(4)
@@ -716,12 +752,12 @@ def render_dashboard():
         hr_delta = ((sig["hourly_target"] - price) / price) * 100
         day_delta = ((sig["daily_target"] - price) / price) * 100
 
-        t1.metric("Ideal Buy Price", f"${sig['ideal_buy']:.2f}", f"{buy_delta:+.2f}% from now", help="The recommended entry price based on pullback support so you don't chase peaks.")
-        t2.metric("Ideal Sell Price", f"${sig['ideal_sell']:.2f}", f"{sell_delta:+.2f}% from now", help="Your target exit price for taking profit based on your Reward-to-Risk ratio.")
-        t3.metric("Hourly Target (1H)", f"${sig['hourly_target']:.2f}", f"{hr_delta:+.2f}% projected", help="Expected price movement over the next hour based on volatility.")
+        t1.metric("Ideal Buy Price", f"${sig['ideal_buy']:,.{ticker_digits}f}", f"{buy_delta:+.2f}% from now", help="The recommended entry price based on pullback support so you don't chase peaks.")
+        t2.metric("Ideal Sell Price", f"${sig['ideal_sell']:,.{ticker_digits}f}", f"{sell_delta:+.2f}% from now", help="Your target exit price for taking profit based on your Reward-to-Risk ratio.")
+        t3.metric("Hourly Target (1H)", f"${sig['hourly_target']:,.{ticker_digits}f}", f"{hr_delta:+.2f}% projected", help="Expected price movement over the next hour based on volatility.")
         t4.metric(
             "Daily Target (EOD)",
-            f"${sig['daily_target']:.2f}",
+            f"${sig['daily_target']:,.{ticker_digits}f}",
             f"{day_delta:+.2f}% (Range: ${sig['daily_range'][0]}–${sig['daily_range'][1]})",
             help="Projected end-of-day price boundary based on 14-day average volatility."
         )
@@ -744,18 +780,27 @@ def render_dashboard():
 
         with right:
             info_heading("⚡ Quick Trade Execution", "Creates a simulated long or short position using the account size, risk percentage and stop distance. It does not send broker orders.", 4)
-            st.markdown(f"**Ideal Entry**: `${sig['ideal_buy']:.2f}`  |  **Stop Loss**: `${sig['stop']:.2f}`  |  **Take Profit**: `${sig['ideal_sell']:.2f}`")
+            st.markdown(f"**Ideal Entry**: `${sig['ideal_buy']:,.{ticker_digits}f}`  |  **Stop Loss**: `${sig['stop']:,.{ticker_digits}f}`  |  **Take Profit**: `${sig['ideal_sell']:,.{ticker_digits}f}`")
 
             risk_dollars = st.session_state.account_size * risk_pct
-            stop_dist = max(float(sig["stop_dist"]), 0.01)
-            risk_based_shares = int(risk_dollars / stop_dist)
-            buying_power_shares = int(st.session_state.account_size / max(price, 0.01))
-            shares = max(0, min(risk_based_shares, buying_power_shares))
+            is_crypto = ticker.endswith("-USD")
+            stop_dist = max(float(sig["stop_dist"]), 0.000001 if is_crypto else 0.01)
+            if is_crypto:
+                risk_based_shares = risk_dollars / stop_dist
+                buying_power_shares = st.session_state.account_size / max(price, 0.000001)
+                shares = round(max(0.0, min(risk_based_shares, buying_power_shares)), 6)
+                unit_label = "units"
+            else:
+                risk_based_shares = int(risk_dollars / stop_dist)
+                buying_power_shares = int(st.session_state.account_size / max(price, 0.01))
+                shares = max(0, min(risk_based_shares, buying_power_shares))
+                unit_label = "shares"
             actual_risk = shares * stop_dist
             st.markdown(
-                f"**Position Size**: `{shares}` shares "
+                f"**Position Size**: `{shares}` {unit_label} "
                 f"(risk budget `${risk_dollars:,.2f}`; estimated risk `${actual_risk:,.2f}`; "
-                f"buying-power cap `{buying_power_shares}` shares)"
+                f"buying-power cap `{buying_power_shares:.6f}` {unit_label})" if is_crypto else
+                f"buying-power cap `{buying_power_shares}` {unit_label})"
             )
 
             already_open = any(
@@ -770,13 +815,13 @@ def render_dashboard():
                 else:
                     long_ready = sig["long_score"] >= 3 and sig["long_score"] > sig["short_score"]
                     short_ready = sig["short_score"] >= 3 and sig["short_score"] > sig["long_score"]
-                    if b1.button(f"🚀 Paper BUY @ ${price:.2f}", type="primary", use_container_width=True, disabled=(not long_ready)):
+                    if b1.button(f"🚀 Paper BUY @ ${price:,.{ticker_digits}f}", type="primary", use_container_width=True, disabled=(not long_ready)):
                         st.session_state.paper_trades.append({
                             "id": str(uuid.uuid4())[:8],
                             "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
                             "ticker": ticker,
                             "side": "LONG",
-                            "entry": round(price, 2),
+                            "entry": round(price, ticker_digits),
                             "stop": sig["stop"],
                             "target": sig["ideal_sell"],
                             "shares": shares,
@@ -787,12 +832,13 @@ def render_dashboard():
                         })
                         st.rerun()
 
-                    if b2.button(f"🔻 Paper SHORT @ ${price:.2f}", type="secondary", use_container_width=True, disabled=(not short_ready)):
+                    if b2.button(f"🔻 Paper SHORT @ ${price:,.{ticker_digits}f}", type="secondary", use_container_width=True, disabled=(not short_ready)):
                         # Short positions profit when price falls: stop above entry, target below.
-                        short_entry = round(price, 2)
-                        short_risk = max(float(sig["stop_dist"]), price * 0.0025, 0.01)
-                        short_stop = round(short_entry + short_risk, 2)
-                        short_target = round(max(0.01, short_entry - short_risk * rr_ratio), 2)
+                        short_digits = price_decimals(price)
+                        short_entry = round(price, short_digits)
+                        short_risk = max(float(sig["stop_dist"]), price * 0.0025, 0.000001)
+                        short_stop = round(short_entry + short_risk, short_digits)
+                        short_target = round(max(0.000001, short_entry - short_risk * rr_ratio), short_digits)
                         st.session_state.paper_trades.append({
                             "id": str(uuid.uuid4())[:8],
                             "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
@@ -851,9 +897,9 @@ def render_dashboard():
                 name="Sell Marker"
             ), row=1, col=1)
 
-        fig.add_hline(y=sig["ideal_buy"], line_dash="dot", line_color="#10b981", annotation_text=f"Ideal Buy ${sig['ideal_buy']:.2f}", row=1, col=1)
-        fig.add_hline(y=sig["ideal_sell"], line_dash="dot", line_color="#ef4444", annotation_text=f"Ideal Sell ${sig['ideal_sell']:.2f}", row=1, col=1)
-        fig.add_hline(y=sig["hourly_target"], line_dash="dash", line_color="#06b6d4", annotation_text=f"1H Target ${sig['hourly_target']:.2f}", row=1, col=1)
+        fig.add_hline(y=sig["ideal_buy"], line_dash="dot", line_color="#10b981", annotation_text=f"Ideal Buy ${sig['ideal_buy']:,.{ticker_digits}f}", row=1, col=1)
+        fig.add_hline(y=sig["ideal_sell"], line_dash="dot", line_color="#ef4444", annotation_text=f"Ideal Sell ${sig['ideal_sell']:,.{ticker_digits}f}", row=1, col=1)
+        fig.add_hline(y=sig["hourly_target"], line_dash="dash", line_color="#06b6d4", annotation_text=f"1H Target ${sig['hourly_target']:,.{ticker_digits}f}", row=1, col=1)
 
         bar_colors = ["#10b981" if c >= o else "#ef4444" for c, o in zip(plot_df["Close"], plot_df["Open"])]
         fig.add_trace(go.Bar(x=plot_df.index, y=plot_df["Volume"], name="Volume", marker_color=bar_colors, opacity=0.6), row=2, col=1)
@@ -895,12 +941,12 @@ def render_dashboard():
                 jc1, jc2, jc3, jc4 = st.columns(4)
                 j_ticker = jc1.text_input("Ticker", value=ticker).upper()
                 j_side = jc2.selectbox("Side", ["LONG", "SHORT"])
-                j_entry = jc3.number_input("Entry Price", value=float(price), format="%.2f")
-                j_shares = jc4.number_input("Shares", min_value=1, value=100)
+                j_entry = jc3.number_input("Entry Price", value=float(price), format=f"%.{ticker_digits}f")
+                j_shares = jc4.number_input("Shares / Units", min_value=0.000001, value=1.0, step=0.01, format="%.6f")
                 
                 jc5, jc6 = st.columns(2)
-                j_stop = jc5.number_input("Stop Loss", value=float(price * 0.99), format="%.2f")
-                j_target = jc6.number_input("Take Profit", value=float(price * 1.02), format="%.2f")
+                j_stop = jc5.number_input("Stop Loss", value=float(price * 0.99), format=f"%.{ticker_digits}f")
+                j_target = jc6.number_input("Take Profit", value=float(price * 1.02), format=f"%.{ticker_digits}f")
                 
                 j_notes = st.text_area("Trading Notes / Psychology / Strategy Setup", placeholder="e.g. VWAP reclaim on strong morning volume...")
                 
@@ -936,11 +982,13 @@ def render_dashboard():
                 unrealized = (live_px - t["entry"]) * t["shares"] if t["side"] == "LONG" else (t["entry"] - live_px) * t["shares"]
 
                 cols = st.columns([1.2, 0.9, 0.9, 1.0, 1.2, 1.0])
-                cols[0].write(f"**{t['ticker']}** ({t['side']})\n\n{t['shares']} sh")
-                cols[1].write(f"Entry: `${t['entry']}`\n\nLive: `${live_px:.2f}`")
-                cols[2].write(f"Stop: `${t['stop']}`\n\nTarget: `${t['target']}`")
+                unit_label = "units" if t["ticker"].endswith("-USD") else "shares"
+                cols[0].write(f"**{display_asset_name(t['ticker'])}** ({t['ticker']}, {t['side']})\n\n{t['shares']} {unit_label}")
+                trade_digits = price_decimals(live_px)
+                cols[1].write(f"Entry: `${t['entry']:,.{trade_digits}f}`\n\nLive: `${live_px:,.{trade_digits}f}`")
+                cols[2].write(f"Stop: `${t['stop']:,.{trade_digits}f}`\n\nTarget: `${t['target']:,.{trade_digits}f}`")
                 cols[3].write(f"Unrealized:\n\n**${unrealized:+.2f}**")
-                exit_px = cols[4].number_input("Exit Price", value=float(live_px), key=f"ex_{t['id']}", format="%.2f")
+                exit_px = cols[4].number_input("Exit Price", value=float(live_px), key=f"ex_{t['id']}", format=f"%.{price_decimals(live_px)}f")
                 if cols[5].button("Close Trade", key=f"cl_{t['id']}", use_container_width=True):
                     pnl = (exit_px - t["entry"]) * t["shares"] if t["side"] == "LONG" else (t["entry"] - exit_px) * t["shares"]
                     t["exit"] = exit_px
