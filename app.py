@@ -9,6 +9,7 @@ from datetime import datetime, date, time as dtime
 from zoneinfo import ZoneInfo
 import uuid
 import io
+from concurrent.futures import ThreadPoolExecutor
 
 # ---------- Page Setup ----------
 st.set_page_config(
@@ -25,8 +26,15 @@ st.markdown("""
     /* Keep the full terminal readable and prevent widgets from being clipped. */
     .block-container { max-width: 1900px; padding-top: 1.15rem; padding-bottom: 2rem; padding-left: clamp(1rem, 2vw, 2.5rem); padding-right: clamp(1rem, 2vw, 2.5rem); }
     div[data-testid="stPlotlyChart"], div[data-testid="stDataFrame"] { width: 100%; max-width: 100%; }
-    div[data-testid="stHorizontalBlock"] { gap: 0.8rem; }
+    div[data-testid="stHorizontalBlock"] { gap: 0.8rem; align-items: stretch; }
+    div[data-testid="stDataFrame"] { min-width: 0; max-width: 100%; }
+    div[data-testid="stMetric"] { min-width: 0; overflow-wrap: anywhere; }
     .stMarkdown, .stCaption { overflow-wrap: anywhere; }
+    .stButton button { white-space: normal; min-height: 2.5rem; }
+    @media (max-width: 1100px) {
+        div[data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+        div[data-testid="column"] { min-width: min(100%, 220px) !important; }
+    }
     @media (max-width: 900px) {
         .block-container { padding-left: 0.8rem; padding-right: 0.8rem; }
         .action-banner { font-size: 1.25rem !important; }
@@ -136,7 +144,7 @@ RECOMMENDATION_UNIVERSE = [
     "XOM", "LLY", "COST", "PLTR", "ORCL"
 ]
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=240, show_spinner=False)
 def scan_recommendation_candidates(scan_interval="15m", prepost=False, rr_ratio=1.8):
     """Rank a liquid, predefined US-stock universe using transparent technical rules."""
     rows = []
@@ -146,27 +154,39 @@ def scan_recommendation_candidates(scan_interval="15m", prepost=False, rr_ratio=
             if raw is None or raw.empty or len(raw) < 30:
                 continue
             enriched = add_indicators(raw)
+            daily = get_daily_stats(symbol)
+            live_quote = get_fast_quote(symbol)
             stats = compute_price_targets_and_signal(
-                enriched, None, None, scan_interval, rr_ratio
+                enriched, live_quote, daily, scan_interval, rr_ratio
             )
             side = stats["side"]
-            if side not in {"LONG", "SHORT"}:
+            if side not in {"LONG", "SHORT"} or int(stats["score"]) < 3:
                 continue
+            current_price = float(stats["price"])
+            entry_price = float(stats["ideal_buy"])
+            target_price = float(stats["ideal_sell"])
+            target_pct = ((target_price / max(entry_price, 0.01)) - 1) * 100
+            if side == "SHORT":
+                target_pct = ((entry_price / max(target_price, 0.01)) - 1) * 100
+            day_change_pct = float(daily.get("change_pct", 0.0)) if daily else 0.0
             rows.append({
                 "Symbol": symbol,
-                "Price": round(stats["price"], 2),
+                "Price": round(current_price, 2),
+                "Today %": round(day_change_pct, 2),
                 "Bias": "Bullish" if side == "LONG" else "Bearish",
                 "Score": f'{stats["score"]}/5',
-                "RSI": round(stats["rsi"], 1),
-                "Entry": round(stats["ideal_buy"], 2),
+                "Target Price": round(target_price, 2),
+                "Potential %": round(target_pct, 2),
+                "Entry": round(entry_price, 2),
                 "Stop": round(stats["stop"], 2),
-                "Target": round(stats["ideal_sell"], 2),
+                "RSI": round(stats["rsi"], 1),
                 "_score": int(stats["score"]),
+                "_reward_pct": float(target_pct),
                 "_side": side
             })
         except Exception:
             continue
-    rows.sort(key=lambda row: row["_score"], reverse=True)
+    rows.sort(key=lambda row: (row["_score"], row["_reward_pct"]), reverse=True)
     return rows
 
 # ---------- Session State ----------
@@ -191,32 +211,6 @@ with st.sidebar:
         index=0,
         help="Switch between learning view and pro trading view."
     )
-
-    st.markdown("---")
-    st.markdown("### 🔎 Find a Stock")
-    search_query = st.text_input(
-        "Search ticker or company",
-        placeholder="Type e.g. Apple, NVDA, Microsoft",
-        key="symbol_search_query",
-        help="Press Enter or click Search to retrieve matching current Yahoo Finance symbols."
-    )
-    if st.button("Search symbols", key="run_symbol_search", use_container_width=True):
-        st.session_state["symbol_search_results"] = search_stock_symbols(search_query)
-    search_results = st.session_state.get("symbol_search_results", [])
-    if search_results:
-        options = {
-            f'{item["symbol"]} — {item["name"]} ({item["type"]})': item["symbol"]
-            for item in search_results
-        }
-        selected_label = st.selectbox("Matching symbols · select to autofill", list(options.keys()), key="symbol_search_pick")
-        selected_symbol = options[selected_label]
-        if st.button("＋ Add selected to Watchlist", key="add_search_symbol", use_container_width=True):
-            if selected_symbol not in st.session_state.watchlist:
-                st.session_state.watchlist.append(selected_symbol)
-            st.session_state.active_ticker = selected_symbol
-            st.rerun()
-    elif search_query and st.session_state.get("symbol_search_results") == []:
-        st.caption("Run Search symbols to see matching stocks and ETFs.")
 
     st.markdown("### ⭐ Your Watchlist")
     manual_sym = st.text_input("Or enter a ticker manually", placeholder="e.g. META", key="manual_watch_symbol").upper().strip()
@@ -356,10 +350,14 @@ def get_daily_stats(ticker):
     daily_atr = float(tr.rolling(14, min_periods=3).mean().iloc[-1])
     today_open = float(df_d["Open"].iloc[-1])
     prev_day_close = float(df_d["Close"].iloc[-2]) if len(df_d) >= 2 else today_open
+    today_close = float(df_d["Close"].iloc[-1])
+    change_pct = ((today_close - prev_day_close) / prev_day_close * 100) if prev_day_close else 0.0
     return {
         "daily_atr": daily_atr,
         "today_open": today_open,
+        "today_close": today_close,
         "prev_close": prev_day_close,
+        "change_pct": change_pct,
         "day_high": float(df_d["High"].iloc[-1]),
         "day_low": float(df_d["Low"].iloc[-1]),
     }
@@ -538,6 +536,103 @@ def get_higher_tf_bias(ticker, prepost, trend_interval="15m"):
         return "⚪ Neutral"
     except Exception:
         return "Unavailable"
+
+# ---------- ALWAYS-REFRESHING MARKET CANDIDATES ----------
+@st.cache_resource
+def get_market_scan_executor():
+    """One background worker keeps the candidate scan from blocking the dashboard."""
+    return ThreadPoolExecutor(max_workers=1, thread_name_prefix="market-candidate-scan")
+
+
+@st.fragment(run_every=15)
+def render_top_market_candidates():
+    st.markdown("## ⭐ Top Market Candidates")
+    st.caption(
+        "Refreshes automatically about every 5 minutes. Ranked technical research candidates from a curated liquid-stock universe. "
+        "Potential target percentages are formula-based scenarios, not promised returns or personalized advice."
+    )
+    button_col, info_col = st.columns([1, 3])
+    with button_col:
+        force_refresh = st.button("↻ Refresh candidates now", key="top_candidate_refresh", use_container_width=True)
+    with info_col:
+        st.caption("15-minute technical scan · automatic refresh every 5 minutes")
+
+    future = st.session_state.get("recommendation_future")
+    requested_at = st.session_state.get("recommendation_requested_at", 0.0)
+    now_ts = datetime.now().timestamp()
+    if force_refresh:
+        scan_recommendation_candidates.clear()
+        future = None
+        st.session_state["recommendation_rows"] = []
+
+    # Launch scans in the background so search and the main dashboard remain visible.
+    if future is None or (future.done() and now_ts - requested_at >= 300):
+        future = get_market_scan_executor().submit(scan_recommendation_candidates, "15m", False, rr_ratio)
+        st.session_state["recommendation_future"] = future
+        st.session_state["recommendation_requested_at"] = now_ts
+
+    if future.done():
+        try:
+            rows = future.result()
+            st.session_state["recommendation_rows"] = rows
+            st.session_state["recommendation_scan_time"] = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %I:%M:%S %p ET")
+        except Exception as exc:
+            st.caption(f"Scanner temporarily unavailable: {exc}")
+
+    candidates = st.session_state.get("recommendation_rows", [])
+    scan_time = st.session_state.get("recommendation_scan_time")
+    if scan_time:
+        st.caption(f"Last completed scan: {scan_time} · Quotes may be delayed or rate-limited.")
+    if not future.done():
+        if candidates:
+            st.info("Refreshing candidates in the background. Showing the last completed scan meanwhile.")
+        else:
+            st.info("Building the first candidate list in the background. You can use search and the dashboard while it runs.")
+    if not candidates:
+        return
+
+    bullish = [row for row in candidates if row["_side"] == "LONG"]
+    bearish = [row for row in candidates if row["_side"] == "SHORT"]
+    if bullish:
+        st.markdown("#### 🟢 Bullish candidates")
+        bullish_df = pd.DataFrame(bullish[:8]).drop(columns=["_score", "_reward_pct", "_side"], errors="ignore")
+        st.dataframe(
+            bullish_df, use_container_width=True, hide_index=True,
+            column_config={
+                "Price": st.column_config.NumberColumn("Current price", format="$%.2f"),
+                "Today %": st.column_config.NumberColumn("Day change", format="%+.2f%%"),
+                "Target Price": st.column_config.NumberColumn("Target price", format="$%.2f"),
+                "Potential %": st.column_config.NumberColumn("Target distance", format="%+.2f%%"),
+                "Entry": st.column_config.NumberColumn("Entry area", format="$%.2f"),
+                "Stop": st.column_config.NumberColumn("Stop", format="$%.2f"),
+            }
+        )
+    else:
+        st.info("No bullish candidates currently meet the scanner's minimum technical score.")
+    if bearish:
+        with st.expander("🔻 Bearish / short candidates", expanded=False):
+            bearish_df = pd.DataFrame(bearish[:6]).drop(columns=["_score", "_reward_pct", "_side"], errors="ignore")
+            st.dataframe(
+                bearish_df, use_container_width=True, hide_index=True,
+                column_config={
+                    "Price": st.column_config.NumberColumn("Current price", format="$%.2f"),
+                    "Today %": st.column_config.NumberColumn("Day change", format="%+.2f%%"),
+                    "Target Price": st.column_config.NumberColumn("Target price", format="$%.2f"),
+                    "Potential %": st.column_config.NumberColumn("Target distance", format="%+.2f%%"),
+                }
+            )
+    choices = [row["Symbol"] for row in candidates]
+    pick_col, add_col = st.columns([2, 1])
+    with pick_col:
+        chosen = st.selectbox("Choose a candidate", choices, key="top_candidate_pick")
+    with add_col:
+        st.write("")
+        if st.button("＋ Add to watchlist", key="top_candidate_add", use_container_width=True):
+            if chosen not in st.session_state.watchlist:
+                st.session_state.watchlist.append(chosen)
+            st.session_state.active_ticker = chosen
+            st.rerun()
+
 
 # ---------- LIVE DASHBOARD FRAGMENT ----------
 run_interval = refresh_sec if auto else None
@@ -767,7 +862,7 @@ def render_dashboard():
         fig.add_trace(go.Bar(x=plot_df.index, y=plot_df["Volume"], name="Volume", marker_color=bar_colors, opacity=0.6), row=2, col=1)
 
         fig.update_layout(
-            height=470,
+            height=560,
             autosize=True,
             paper_bgcolor="#121824",
             plot_bgcolor="#121824",
@@ -914,62 +1009,42 @@ def render_dashboard():
     except Exception as e:
         st.error(f"Something went wrong: {e}")
 
-render_dashboard()
+st.markdown("# ⚡ PRO DAY TRADE TERMINAL")
+st.caption("Live market monitor · technical research · paper trading")
+render_top_market_candidates()
 
-# ---------- SEPARATE MARKET IDEAS PANEL (not the personal watchlist) ----------
-with st.expander("⭐ Market Candidate Scanner — separate from your watchlist", expanded=False):
-    st.caption(
-        "Screens a curated universe of liquid US stocks/ETFs using technical conditions. "
-        "These are research candidates, not personalized investment advice."
-    )
-    rec_col1, rec_col2, rec_col3 = st.columns([1, 1, 2])
-    with rec_col1:
-        rec_interval = st.selectbox(
-            "Scanner timeframe",
-            ["1m", "5m", "15m", "30m", "60m"],
-            index=2,
-            format_func=lambda value: "1h" if value == "60m" else value,
-            key="recommendation_interval"
-        )
-    with rec_col2:
-        rec_prepost = st.checkbox("Include extended hours in scan", value=False, key="recommendation_prepost")
-    with rec_col3:
-        st.write("")
-        refresh_recs = st.button("🔄 Scan / Refresh candidates", key="refresh_recommendations")
-
-    if "recommendation_rows" not in st.session_state:
-        st.session_state.recommendation_rows = []
-    if refresh_recs:
-        with st.spinner(f"Scanning the candidate list on {rec_interval} bars…"):
-            st.session_state.recommendation_rows = scan_recommendation_candidates(
-                rec_interval, rec_prepost, rr_ratio
-            )
-            st.session_state.recommendation_scan_time = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %I:%M:%S %p ET")
-
-    rec_rows = st.session_state.recommendation_rows
-    if rec_rows:
-        if st.session_state.get("recommendation_scan_time"):
-            st.caption(f"Last scan: {st.session_state.recommendation_scan_time}")
-        display_recs = pd.DataFrame(rec_rows).drop(columns=["_score", "_side"], errors="ignore")
-        st.dataframe(
-            display_recs,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Symbol": st.column_config.TextColumn("Ticker"),
-                "Bias": st.column_config.TextColumn("Technical bias"),
-                "Score": st.column_config.TextColumn("Setup score")
-            }
-        )
-        candidate_symbols = [row["Symbol"] for row in rec_rows]
-        chosen_candidate = st.selectbox("Choose a candidate to add", candidate_symbols, key="candidate_to_add")
-        if st.button("＋ Add selected candidate to Watchlist", key="add_top_candidate"):
-            if chosen_candidate not in st.session_state.watchlist:
-                st.session_state.watchlist.append(chosen_candidate)
-            st.session_state.active_ticker = chosen_candidate
-            st.rerun()
+# ---------- STOCK SEARCH / AUTOFILL ----------
+st.markdown("## 🔎 Find a Stock")
+search_query = st.text_input(
+    "Search ticker or company name",
+    placeholder="Start typing: Apple, NVDA, Microsoft…",
+    key="main_symbol_search_query"
+)
+if search_query.strip():
+    search_results = search_stock_symbols(search_query)
+    if search_results:
+        search_options = [
+            f'{item["symbol"]} — {item["name"]} ({item["type"]})'
+            for item in search_results
+        ]
+        chosen_label = st.selectbox("Matching stocks and ETFs · choose a result", search_options, key="main_symbol_search_pick")
+        chosen_symbol = search_results[search_options.index(chosen_label)]["symbol"]
+        load_col, watch_col = st.columns(2)
+        with load_col:
+            if st.button("Load selected stock", type="primary", use_container_width=True):
+                st.session_state.active_ticker = chosen_symbol
+                st.rerun()
+        with watch_col:
+            if st.button("＋ Add selected to watchlist", use_container_width=True):
+                if chosen_symbol not in st.session_state.watchlist:
+                    st.session_state.watchlist.append(chosen_symbol)
+                st.session_state.active_ticker = chosen_symbol
+                st.rerun()
     else:
-        st.info("The scanner has not run yet. Select ‘Scan / Refresh candidates’ when you want to look for setups.")
+        st.info("No matching symbols found. Try a ticker symbol or another company spelling.")
+
+st.markdown("---")
+render_dashboard()
 
 st.markdown("---")
 st.warning("""
