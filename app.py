@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, date, time as dtime
 from zoneinfo import ZoneInfo
@@ -11,53 +12,75 @@ import io
 
 # ---------- Page Setup ----------
 st.set_page_config(
-    page_title="Pro Day Trade Helper",
-    page_icon="📈",
+    page_title="Pro Day Trade Terminal",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Dark theme CSS with bright sidebar text fix
+# Modern Cyber-Terminal Dark Theme CSS
 st.markdown("""
 <style>
-    .stApp { background-color: #131722; color: #d1d4dc; }
+    .stApp { background: linear-gradient(135deg, #07090e 0%, #0b0e14 100%); color: #e2e8f0; }
+    
+    /* Sidebar Styling */
     section[data-testid="stSidebar"] {
-        background-color: #1e222d;
-        border-right: 1px solid #2a2e39;
+        background-color: #0f141f;
+        border-right: 1px solid #1e293b;
     }
-    /* Fix sidebar text contrast */
     section[data-testid="stSidebar"] label, 
     section[data-testid="stSidebar"] span, 
     section[data-testid="stSidebar"] p,
     section[data-testid="stSidebar"] .stMarkdown {
-        color: #d1d4dc !important;
+        color: #f8fafc !important;
+        font-weight: 500;
     }
-    h1, h2, h3, h4 { color: #d1d4dc !important; }
+    section[data-testid="stSidebar"] .stButton button {
+        background-color: #1a2234 !important;
+        color: #f8fafc !important;
+        border: 1px solid #334155 !important;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+    }
+    section[data-testid="stSidebar"] .stButton button:hover {
+        background-color: #2563eb !important;
+        border-color: #60a5fa !important;
+        color: #ffffff !important;
+        box-shadow: 0 0 12px rgba(37, 99, 235, 0.4);
+    }
+    
+    h1, h2, h3, h4 { color: #f8fafc !important; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    
+    /* Modern Action Banners */
     .action-banner {
         font-size: 1.8rem;
-        font-weight: 700;
+        font-weight: 800;
         text-align: center;
-        padding: 12px;
-        border-radius: 8px;
-        margin: 8px 0 14px 0;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        padding: 14px;
+        border-radius: 12px;
+        margin: 10px 0 16px 0;
+        letter-spacing: 0.5px;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.5);
     }
-    .buy   { background: linear-gradient(135deg, #089981, #06705f); color: white; }
-    .short { background: linear-gradient(135deg, #f23645, #b8222f); color: white; }
-    .watch { background: linear-gradient(135deg, #2962ff, #1a43b5); color: white; }
+    .buy   { background: linear-gradient(135deg, #059669, #047857); color: white; border: 1px #10b981 solid; }
+    .short { background: linear-gradient(135deg, #dc2626, #b91c1c); color: white; border: 1px #f87171 solid; }
+    .watch { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; border: 1px #60a5fa solid; }
     
+    /* Glassmorphism Metric Cards */
     div[data-testid="stMetric"] {
-        background-color: #1e222d;
-        border: 1px solid #2a2e39;
-        border-radius: 8px;
-        padding: 12px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        background: rgba(18, 24, 36, 0.85);
+        backdrop-filter: blur(12px);
+        border: 1px solid #1e293b;
+        border-radius: 12px;
+        padding: 14px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     }
-    div[data-testid="stMetric"] label { color: #848e9c !important; }
+    div[data-testid="stMetric"] label { color: #94a3b8 !important; font-size: 0.9rem !important; }
     div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
         color: #ffffff !important;
-        font-size: 1.3rem !important;
-        font-weight: 600;
+        font-size: 1.4rem !important;
+        font-weight: 700;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -69,6 +92,7 @@ defaults = {
     "paper_trades": [],
     "account_size": 25000.0,
     "daily_loss_limit": 300.0,
+    "last_alert_action": None
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -76,42 +100,40 @@ for k, v in defaults.items():
 
 # ---------- SIDEBAR ----------
 with st.sidebar:
-    st.markdown("### ⚙️ Trading Mode")
+    st.markdown("### 🎛️ Terminal Settings")
     dash_mode = st.radio(
-        "Select Experience Level",
+        "Experience Level",
         ["Beginner (Simple)", "Advanced (Pro)"],
         index=0,
-        help="Switch between a simplified learning view and an advanced terminal view."
+        help="Switch between learning view and pro trading view."
     )
 
     st.markdown("---")
-    st.markdown("### 1. Choose a Stock")
-    new_sym = st.text_input("Add a stock symbol", placeholder="Example: META").upper().strip()
-    if st.button("Add to list") and new_sym and new_sym not in st.session_state.watchlist:
+    st.markdown("### 🔍 Stock Watchlist")
+    new_sym = st.text_input("Add Symbol", placeholder="e.g. META, AMD").upper().strip()
+    if st.button("➕ Add to Watchlist") and new_sym and new_sym not in st.session_state.watchlist:
         st.session_state.watchlist.append(new_sym)
 
-    st.write("Click a stock below:")
+    st.write("Quick Select:")
     for sym in st.session_state.watchlist:
         btn_type = "primary" if sym == st.session_state.active_ticker else "secondary"
-        if st.button(sym, key=f"btn_{sym}", type=btn_type, use_container_width=True):
+        if st.button(f"⚡ {sym}", key=f"btn_{sym}", type=btn_type, use_container_width=True):
             st.session_state.active_ticker = sym
             st.rerun()
 
     st.markdown("---")
-    st.markdown("### 2. Chart & Settings")
+    st.markdown("### 📈 Chart & Risk Controls")
 
-    chart_type = st.radio(
+    chart_type = st.selectbox(
         "Chart Style",
         ["Candlestick", "Line Chart"],
-        index=0,
-        help="Switch between Japanese Candlesticks and a clean Line Chart."
+        index=0
     )
 
     interval = st.selectbox(
-        "Chart speed",
+        "Timeframe / Speed",
         ["1m", "5m", "15m"],
-        index=0,
-        help="1m gives the fastest available intraday candles."
+        index=0
     )
 
     include_247 = st.checkbox(
@@ -121,34 +143,34 @@ with st.sidebar:
     )
 
     st.session_state.account_size = st.number_input(
-        "Account size ($)",
+        "Account Size ($)",
         min_value=1000.0,
         value=st.session_state.account_size,
         step=1000.0
     )
 
     risk_pct = st.slider(
-        "Risk per trade (%)",
+        "Risk Per Trade (%)",
         0.25, 1.0, 0.5, 0.25
     ) / 100
 
     rr_ratio = st.slider(
-        "Reward-to-Risk Ratio",
+        "Reward-to-Risk Target",
         1.2, 3.0, 1.8, 0.1
     )
 
     st.session_state.daily_loss_limit = st.number_input(
-        "Max daily loss ($)",
+        "Max Daily Loss ($)",
         min_value=50.0,
         value=st.session_state.daily_loss_limit,
         step=50.0
     )
 
-    refresh_sec = st.slider("Auto-refresh every (seconds)", 8, 60, 8)
-    auto = st.checkbox("Turn on auto-refresh", value=True)
+    refresh_sec = st.slider("Auto-Refresh Rate (sec)", 8, 60, 8)
+    auto = st.checkbox("Enable Live Auto-Refresh", value=True)
 
     st.markdown("---")
-    st.caption("Terminal powered by Yahoo Finance extended feed.")
+    st.caption("Powered by Yahoo Finance extended feed.")
 
 # ---------- Market Session Helper ----------
 def get_market_session():
@@ -157,15 +179,15 @@ def get_market_session():
     t = now_est.time()
 
     if weekday >= 5:
-        return "Weekend / Overnight (Closed)", now_est
+        return "🌙 Weekend / Closed", now_est
     if dtime(4, 0) <= t < dtime(9, 30):
-        return "Pre-Market (Extended)", now_est
+        return "🌅 Pre-Market (Extended)", now_est
     elif dtime(9, 30) <= t < dtime(16, 0):
-        return "Regular Market Open", now_est
+        return "🟢 Regular Market Open", now_est
     elif dtime(16, 0) <= t < dtime(20, 0):
-        return "After-Hours (Extended)", now_est
+        return "🌆 After-Hours (Extended)", now_est
     else:
-        return "Overnight Session", now_est
+        return "🌙 Overnight Session", now_est
 
 # ---------- Data & Indicators ----------
 @st.cache_data(ttl=5, show_spinner=False)
@@ -251,7 +273,6 @@ def add_indicators(df):
     ], axis=1).max(axis=1)
     df["ATR"] = tr.ewm(alpha=1/14, min_periods=14, adjust=False).mean().fillna(df["Close"] * 0.003)
     
-    # Generate Buy / Sell Signal Markers for Chart
     df["Signal"] = "HOLD"
     above_vwap = df["Close"] > df["VWAP"]
     below_vwap = df["Close"] < df["VWAP"]
@@ -328,7 +349,7 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         daily_range = (round(swing_low, 2), round(swing_high, 2))
 
     if long_score == 5 and price <= ideal_buy + atr * 0.35:
-        action = "BUY NOW (AT IDEAL ZONE)"
+        action = "🚀 BUY NOW (STRONG SETUP)"
         reasons = [
             f"Price (${price:.2f}) is right inside your ideal buy zone (${ideal_buy:.2f})",
             "Trading above VWAP with bullish EMA 9 > EMA 20 alignment",
@@ -337,7 +358,7 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         side = "LONG"
         score = long_score
     elif short_score == 5:
-        action = "SHORT / SELL"
+        action = "🔻 SHORT / SELL NOW"
         reasons = [
             "Price broke below VWAP with bearish EMA alignment",
             "Downward momentum confirmed",
@@ -346,7 +367,7 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         side = "SHORT"
         score = short_score
     elif price >= ideal_sell * 0.999 or rsi > 74:
-        action = "TAKE PROFIT / SELL"
+        action = "💎 TAKE PROFIT / SELL"
         reasons = [
             f"Price reached/exceeded Ideal Sell target (${ideal_sell:.2f}) or RSI is overheated ({rsi:.0f})",
             "Lock in gains rather than chasing"
@@ -354,7 +375,7 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         side = "None"
         score = max(long_score, short_score)
     elif above_vwap and ema_up:
-        action = f"WAIT FOR PULLBACK TO ${ideal_buy:.2f}"
+        action = f"⏳ WAIT FOR PULLBACK TO ${ideal_buy:.2f}"
         reasons = [
             "Trend is bullish, but current price is slightly above ideal entry",
             f"Place limit buy near ${ideal_buy:.2f} (VWAP / EMA9 support)"
@@ -362,7 +383,7 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         side = "LONG"
         score = long_score
     else:
-        action = "WAIT"
+        action = "🛡️ WAIT (NO CLEAR SETUP)"
         reasons = [
             "Price is below VWAP or consolidating without clear momentum",
             f"Watch for a reclaim above VWAP (${vwap:.2f}) or bounce near ${ideal_buy:.2f}"
@@ -394,7 +415,7 @@ def get_higher_tf_bias(ticker, prepost):
             return "Not enough data"
         df = add_indicators(df)
         latest = df.iloc[-1]
-        return "Bullish (Up)" if float(latest["EMA9"]) > float(latest["EMA20"]) else "Bearish (Down)"
+        return "🟢 Bullish (Up)" if float(latest["EMA9"]) > float(latest["EMA20"]) else "🔴 Bearish (Down)"
     except Exception:
         return "Unavailable"
 
@@ -418,6 +439,12 @@ def render_dashboard():
         sig = compute_price_targets_and_signal(df, fast_px, daily_stats, interval, rr_ratio)
 
         price = sig["price"]
+        
+        if "BUY NOW" in sig["action"] or "SHORT" in sig["action"]:
+            if st.session_state.last_alert_action != sig["action"]:
+                st.toast(f"🚨 ALERT: {sig['action']} on {ticker} @ ${price:.2f}!", icon="⚡")
+                st.session_state.last_alert_action = sig["action"]
+
         last_bar_time = df.index[-1]
         try:
             age_sec = int((datetime.now(last_bar_time.tzinfo) - last_bar_time).total_seconds())
@@ -432,8 +459,7 @@ def render_dashboard():
         )
         limit_hit = today_pnl <= -st.session_state.daily_loss_limit
 
-        # Header & Ticker Bar
-        st.markdown(f"## 📊 {ticker} — ${price:.2f}")
+        st.markdown(f"## ⚡ {ticker} — ${price:.2f}")
         st.caption(
             f"Session: **{session_label}**  •  EST Time: {now_est.strftime('%I:%M:%S %p')}  •  "
             f"Last Candle: {age_str}  •  Refresh: {refresh_sec}s"
@@ -443,9 +469,8 @@ def render_dashboard():
         st.markdown(f'<div class="action-banner {css}">{sig["action"]}</div>', unsafe_allow_html=True)
 
         if limit_hit:
-            st.error(f"Daily loss limit reached (${st.session_state.daily_loss_limit:.0f}). Stop trading for today.")
+            st.error(f"⚠️ Daily loss limit reached (${st.session_state.daily_loss_limit:.0f}). Stop trading for today.")
 
-        # Metrics Row
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Current Price", f"${price:.2f}")
         c2.metric("VWAP (Fair Value)", f"${sig['vwap']:.2f}")
@@ -453,7 +478,6 @@ def render_dashboard():
         c4.metric("Setup Score", f"{sig['score']}/5")
         c5.metric("15-min Trend", get_higher_tf_bias(ticker, include_247))
 
-        # Advanced Pro Metrics Bar (if Advanced mode selected)
         if dash_mode == "Advanced (Pro)":
             st.markdown("##### 🔬 Advanced Pro Telemetry")
             ac1, ac2, ac3, ac4 = st.columns(4)
@@ -493,7 +517,7 @@ def render_dashboard():
                 """)
 
         with right:
-            st.markdown("#### ⚡ Suggested Trade Plan")
+            st.markdown("#### ⚡ Quick Trade Execution")
             st.markdown(f"**Ideal Entry**: `${sig['ideal_buy']:.2f}`  |  **Stop Loss**: `${sig['stop']:.2f}`  |  **Take Profit**: `${sig['ideal_sell']:.2f}`")
 
             risk_dollars = st.session_state.account_size * risk_pct
@@ -511,7 +535,7 @@ def render_dashboard():
                 if already_open:
                     st.info(f"You already have an open paper trade on {ticker}.")
                 else:
-                    if b1.button(f"Paper BUY @ ${price:.2f}", type="primary", use_container_width=True):
+                    if b1.button(f"🚀 Paper BUY @ ${price:.2f}", type="primary", use_container_width=True):
                         st.session_state.paper_trades.append({
                             "id": str(uuid.uuid4())[:8],
                             "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -524,11 +548,11 @@ def render_dashboard():
                             "status": "OPEN",
                             "exit": None,
                             "pnl": None,
-                            "notes": "Market/Live entry"
+                            "notes": "Quick Execution Signal"
                         })
                         st.rerun()
 
-                    if b2.button(f"Paper SHORT @ ${price:.2f}", use_container_width=True):
+                    if b2.button(f"🔻 Paper SHORT @ ${price:.2f}", use_container_width=True):
                         short_stop = round(price + stop_dist, 2)
                         short_target = round(price - stop_dist * rr_ratio, 2)
                         st.session_state.paper_trades.append({
@@ -543,11 +567,11 @@ def render_dashboard():
                             "status": "OPEN",
                             "exit": None,
                             "pnl": None,
-                            "notes": "Short entry"
+                            "notes": "Quick Execution Signal"
                         })
                         st.rerun()
 
-        # ---------- DYNAMIC CHART WITH BUY/SELL MARKERS ----------
+        # ---------- DYNAMIC CHART WITH ZOOM / TOOLBAR & MARKERS ----------
         plot_df = df.tail(90)
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.78, 0.22], vertical_spacing=0.02)
 
@@ -555,21 +579,20 @@ def render_dashboard():
             fig.add_trace(go.Candlestick(
                 x=plot_df.index, open=plot_df["Open"], high=plot_df["High"], low=plot_df["Low"], close=plot_df["Close"],
                 name="Price",
-                increasing_line_color="#089981", decreasing_line_color="#f23645",
-                increasing_fillcolor="#089981", decreasing_fillcolor="#f23645"
+                increasing_line_color="#10b981", decreasing_line_color="#ef4444",
+                increasing_fillcolor="#10b981", decreasing_fillcolor="#ef4444"
             ), row=1, col=1)
         else:
             fig.add_trace(go.Scatter(
                 x=plot_df.index, y=plot_df["Close"],
                 name="Close Price",
-                line=dict(color="#2962ff", width=2.5)
+                line=dict(color="#3b82f6", width=2.5)
             ), row=1, col=1)
 
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["VWAP"], name="VWAP", line=dict(color="#ffeb3b", width=2)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA9"], name="EMA 9", line=dict(color="#ff9800", width=1.3)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA20"], name="EMA 20", line=dict(color="#ab47bc", width=1.3)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["VWAP"], name="VWAP", line=dict(color="#fbbf24", width=2)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA9"], name="EMA 9", line=dict(color="#f97316", width=1.3)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA20"], name="EMA 20", line=dict(color="#a855f7", width=1.3)), row=1, col=1)
 
-        # Add Buy & Sell signal markers directly on the chart
         buy_signals = plot_df[plot_df["Signal"] == "BUY"]
         sell_signals = plot_df[plot_df["Signal"] == "SELL"]
 
@@ -577,51 +600,91 @@ def render_dashboard():
             fig.add_trace(go.Scatter(
                 x=buy_signals.index, y=buy_signals["Low"] * 0.998,
                 mode="markers",
-                marker=dict(symbol="triangle-up", size=12, color="#089981", line=dict(width=1, color="white")),
-                name="Buy Signal"
+                marker=dict(symbol="triangle-up", size=13, color="#10b981", line=dict(width=1, color="white")),
+                name="Buy Marker"
             ), row=1, col=1)
 
         if not sell_signals.empty:
             fig.add_trace(go.Scatter(
                 x=sell_signals.index, y=sell_signals["High"] * 1.002,
                 mode="markers",
-                marker=dict(symbol="triangle-down", size=12, color="#f23645", line=dict(width=1, color="white")),
-                name="Sell / Short Signal"
+                marker=dict(symbol="triangle-down", size=13, color="#ef4444", line=dict(width=1, color="white")),
+                name="Sell Marker"
             ), row=1, col=1)
 
-        # Target lines
-        fig.add_hline(y=sig["ideal_buy"], line_dash="dot", line_color="#089981", annotation_text=f"Ideal Buy ${sig['ideal_buy']:.2f}", row=1, col=1)
-        fig.add_hline(y=sig["ideal_sell"], line_dash="dot", line_color="#f23645", annotation_text=f"Ideal Sell ${sig['ideal_sell']:.2f}", row=1, col=1)
-        fig.add_hline(y=sig["hourly_target"], line_dash="dash", line_color="#00bcd4", annotation_text=f"1H Target ${sig['hourly_target']:.2f}", row=1, col=1)
+        fig.add_hline(y=sig["ideal_buy"], line_dash="dot", line_color="#10b981", annotation_text=f"Ideal Buy ${sig['ideal_buy']:.2f}", row=1, col=1)
+        fig.add_hline(y=sig["ideal_sell"], line_dash="dot", line_color="#ef4444", annotation_text=f"Ideal Sell ${sig['ideal_sell']:.2f}", row=1, col=1)
+        fig.add_hline(y=sig["hourly_target"], line_dash="dash", line_color="#06b6d4", annotation_text=f"1H Target ${sig['hourly_target']:.2f}", row=1, col=1)
 
-        colors = ["#089981" if c >= o else "#f23645" for c, o in zip(plot_df["Close"], plot_df["Open"])]
-        fig.add_trace(go.Bar(x=plot_df.index, y=plot_df["Volume"], name="Volume", marker_color=colors, opacity=0.5), row=2, col=1)
+        bar_colors = ["#10b981" if c >= o else "#ef4444" for c, o in zip(plot_df["Close"], plot_df["Open"])]
+        fig.add_trace(go.Bar(x=plot_df.index, y=plot_df["Volume"], name="Volume", marker_color=bar_colors, opacity=0.6), row=2, col=1)
 
         fig.update_layout(
             height=520,
-            paper_bgcolor="#131722",
-            plot_bgcolor="#131722",
-            font=dict(color="#d1d4dc"),
+            paper_bgcolor="#121824",
+            plot_bgcolor="#121824",
+            font=dict(color="#f8fafc"),
             margin=dict(l=0, r=10, t=10, b=0),
             xaxis_rangeslider_visible=False,
             showlegend=True,
             legend=dict(orientation="h", y=1.02, x=0, bgcolor="rgba(0,0,0,0)"),
-            xaxis=dict(gridcolor="#2a2e39", type="category", nticks=10),
-            yaxis=dict(gridcolor="#2a2e39", side="right"),
-            yaxis2=dict(gridcolor="#2a2e39", side="right"),
+            xaxis=dict(gridcolor="#1e293b", type="category", nticks=10),
+            yaxis=dict(gridcolor="#1e293b", side="right"),
+            yaxis2=dict(gridcolor="#1e293b", side="right"),
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(
+            fig, 
+            use_container_width=True, 
+            config={
+                "displayModeBar": True,
+                "scrollZoom": True,
+                "displaylogo": False,
+                "modeBarButtonsToRemove": ["lasso2d", "select2d"]
+            }
+        )
 
-        # ---------- PAPER TRADE LOG ----------
+        # ---------- PRO TRADING JOURNAL & PROGRESS ANALYTICS ----------
         st.markdown("---")
-        st.markdown("### 📝 Practice Trade Log")
-        st.info(f"Today's practice P&L: **${today_pnl:+.2f}**  •  Daily limit: ${st.session_state.daily_loss_limit:.0f}")
+        st.markdown("### 📓 Trading Journal & Progress Analytics")
 
         open_trades = [t for t in st.session_state.paper_trades if t["status"] == "OPEN"]
         closed_trades = [t for t in st.session_state.paper_trades if t["status"] == "CLOSED"]
 
+        with st.expander("✍️ Add Custom Trade to Journal"):
+            with st.form("manual_trade_form"):
+                jc1, jc2, jc3, jc4 = st.columns(4)
+                j_ticker = jc1.text_input("Ticker", value=ticker).upper()
+                j_side = jc2.selectbox("Side", ["LONG", "SHORT"])
+                j_entry = jc3.number_input("Entry Price", value=float(price), format="%.2f")
+                j_shares = jc4.number_input("Shares", min_value=1, value=100)
+                
+                jc5, jc6 = st.columns(2)
+                j_stop = jc5.number_input("Stop Loss", value=float(price * 0.99), format="%.2f")
+                j_target = jc6.number_input("Take Profit", value=float(price * 1.02), format="%.2f")
+                
+                j_notes = st.text_area("Trading Notes / Psychology / Strategy Setup", placeholder="e.g. VWAP reclaim on strong morning volume...")
+                
+                submitted = st.form_submit_button("Save Trade to Journal")
+                if submitted:
+                    st.session_state.paper_trades.append({
+                        "id": str(uuid.uuid4())[:8],
+                        "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "ticker": j_ticker,
+                        "side": j_side,
+                        "entry": j_entry,
+                        "stop": j_stop,
+                        "target": j_target,
+                        "shares": j_shares,
+                        "status": "OPEN",
+                        "exit": None,
+                        "pnl": None,
+                        "notes": j_notes
+                    })
+                    st.success("Trade logged successfully!")
+                    st.rerun()
+
         if open_trades:
-            st.markdown("#### Open Practice Trades")
+            st.markdown("#### 📂 Active Positions")
             for t in open_trades:
                 live_px = price if t["ticker"] == ticker else (get_fast_quote(t["ticker"]) or t["entry"])
                 unrealized = (live_px - t["entry"]) * t["shares"] if t["side"] == "LONG" else (t["entry"] - live_px) * t["shares"]
@@ -631,8 +694,8 @@ def render_dashboard():
                 cols[1].write(f"Entry: `${t['entry']}`\n\nLive: `${live_px:.2f}`")
                 cols[2].write(f"Stop: `${t['stop']}`\n\nTarget: `${t['target']}`")
                 cols[3].write(f"Unrealized:\n\n**${unrealized:+.2f}**")
-                exit_px = cols[4].number_input("Exit price", value=float(live_px), key=f"ex_{t['id']}", format="%.2f")
-                if cols[5].button("Close trade", key=f"cl_{t['id']}", use_container_width=True):
+                exit_px = cols[4].number_input("Exit Price", value=float(live_px), key=f"ex_{t['id']}", format="%.2f")
+                if cols[5].button("Close Trade", key=f"cl_{t['id']}", use_container_width=True):
                     pnl = (exit_px - t["entry"]) * t["shares"] if t["side"] == "LONG" else (t["entry"] - exit_px) * t["shares"]
                     t["exit"] = exit_px
                     t["pnl"] = round(pnl, 2)
@@ -640,35 +703,58 @@ def render_dashboard():
                     st.rerun()
 
         if closed_trades:
-            st.markdown("#### Closed Practice Trades")
+            st.markdown("#### 📊 Progress Analytics & Closed History")
             cdf = pd.DataFrame(closed_trades)
+            
+            total_pnl = sum(t["pnl"] for t in closed_trades if t["pnl"] is not None)
+            wins = [t for t in closed_trades if t["pnl"] and t["pnl"] > 0]
+            losses = [t for t in closed_trades if t["pnl"] and t["pnl"] < 0]
+            win_rate = (len(wins) / len(closed_trades)) * 100 if closed_trades else 0
+            
+            pk1, pk2, pk3, pk4 = st.columns(4)
+            pk1.metric("Total P&L", f"${total_pnl:+,.2f}")
+            pk2.metric("Win Rate", f"{win_rate:.1f}%", f"{len(wins)} Wins / {len(losses)} Losses")
+            pk3.metric("Avg Win", f"${sum(w['pnl'] for w in wins)/len(wins):,.2f}" if wins else "$0.00")
+            pk4.metric("Avg Loss", f"${sum(l['pnl'] for l in losses)/len(losses):,.2f}" if losses else "$0.00")
+
+            cdf["cumulative_pnl"] = cdf["pnl"].cumsum()
+            fig_eq = px.line(
+                cdf, x="time", y="cumulative_pnl", 
+                title="📈 Cumulative Equity Curve (Progress Over Time)",
+                labels={"cumulative_pnl": "Net P&L ($)", "time": "Trade Time"},
+                markers=True
+            )
+            fig_eq.update_layout(
+                paper_bgcolor="#121824", plot_bgcolor="#121824",
+                font=dict(color="#f8fafc"), height=300,
+                xaxis=dict(gridcolor="#1e293b"), yaxis=dict(gridcolor="#1e293b")
+            )
+            fig_eq.update_traces(line_color="#10b981" if total_pnl >= 0 else "#ef4444", line_width=3)
+            st.plotly_chart(fig_eq, use_container_width=True)
+
             st.dataframe(
                 cdf[["time", "ticker", "side", "entry", "exit", "shares", "pnl", "notes"]],
                 use_container_width=True,
                 hide_index=True
             )
 
-            total_pnl = sum(t["pnl"] for t in closed_trades if t["pnl"] is not None)
-            wins = len([t for t in closed_trades if t["pnl"] and t["pnl"] > 0])
-            st.write(f"Total practice P&L: **${total_pnl:+.2f}**  •  Wins: {wins}/{len(closed_trades)}")
+            col_exp, col_clr = st.columns([1, 1])
+            with col_exp:
+                csv_buffer = io.StringIO()
+                cdf.to_csv(csv_buffer, index=False)
+                st.download_button(
+                    "📥 Export Journal as CSV",
+                    csv_buffer.getvalue(),
+                    file_name=f"trading_journal_{date.today()}.csv",
+                    mime="text/csv"
+                )
+            with col_clr:
+                if st.button("🗑️ Clear Journal History"):
+                    st.session_state.paper_trades = []
+                    st.rerun()
 
-            csv_buffer = io.StringIO()
-            cdf.to_csv(csv_buffer, index=False)
-            st.download_button(
-                "Download trades as CSV",
-                csv_buffer.getvalue(),
-                file_name=f"paper_trades_{date.today()}.csv",
-                mime="text/csv"
-            )
-
-        if st.session_state.paper_trades and st.button("Clear all practice trades"):
-            st.session_state.paper_trades = []
-            st.rerun()
-
-        # Advanced Raw Inspector Tab
-        if dash_mode == "Advanced (Pro)":
-            with st.expander("🔍 Inspect Raw Indicator DataFrame"):
-                st.dataframe(df.tail(15), use_container_width=True)
+        if st.session_state.paper_trades and not closed_trades and not open_trades:
+            st.info("No active trades in journal.")
 
     except Exception as e:
         st.error(f"Something went wrong: {e}")
@@ -677,7 +763,7 @@ render_dashboard()
 
 st.markdown("---")
 st.warning("""
-**Disclaimer**  
-This tool uses free Yahoo Finance data and is for educational paper-trading only.  
-It does not guarantee profits. Always manage your risk.
+**⚠️ Educational Disclaimer**  
+This tool uses free Yahoo Finance data and is intended solely for paper trading, journaling practice, and educational learning.  
+It does not guarantee financial success. Always protect your capital with stop losses.
 """)
