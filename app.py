@@ -11,18 +11,26 @@ import io
 
 # ---------- Page Setup ----------
 st.set_page_config(
-    page_title="Real-Time Day Trade Helper",
+    page_title="Pro Day Trade Helper",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# Dark theme CSS with bright sidebar text fix
 st.markdown("""
 <style>
     .stApp { background-color: #131722; color: #d1d4dc; }
     section[data-testid="stSidebar"] {
         background-color: #1e222d;
         border-right: 1px solid #2a2e39;
+    }
+    /* Fix sidebar text contrast */
+    section[data-testid="stSidebar"] label, 
+    section[data-testid="stSidebar"] span, 
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] .stMarkdown {
+        color: #d1d4dc !important;
     }
     h1, h2, h3, h4 { color: #d1d4dc !important; }
     .action-banner {
@@ -32,20 +40,24 @@ st.markdown("""
         padding: 12px;
         border-radius: 8px;
         margin: 8px 0 14px 0;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
-    .buy   { background: #089981; color: white; }
-    .short { background: #f23645; color: white; }
-    .watch { background: #2962ff; color: white; }
+    .buy   { background: linear-gradient(135deg, #089981, #06705f); color: white; }
+    .short { background: linear-gradient(135deg, #f23645, #b8222f); color: white; }
+    .watch { background: linear-gradient(135deg, #2962ff, #1a43b5); color: white; }
+    
     div[data-testid="stMetric"] {
         background-color: #1e222d;
         border: 1px solid #2a2e39;
-        border-radius: 6px;
-        padding: 10px;
+        border-radius: 8px;
+        padding: 12px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     }
-    div[data-testid="stMetric"] label { color: #787b86 !important; }
+    div[data-testid="stMetric"] label { color: #848e9c !important; }
     div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-        color: #d1d4dc !important;
-        font-size: 1.2rem !important;
+        color: #ffffff !important;
+        font-size: 1.3rem !important;
+        font-weight: 600;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -64,6 +76,15 @@ for k, v in defaults.items():
 
 # ---------- SIDEBAR ----------
 with st.sidebar:
+    st.markdown("### ⚙️ Trading Mode")
+    dash_mode = st.radio(
+        "Select Experience Level",
+        ["Beginner (Simple)", "Advanced (Pro)"],
+        index=0,
+        help="Switch between a simplified learning view and an advanced terminal view."
+    )
+
+    st.markdown("---")
     st.markdown("### 1. Choose a Stock")
     new_sym = st.text_input("Add a stock symbol", placeholder="Example: META").upper().strip()
     if st.button("Add to list") and new_sym and new_sym not in st.session_state.watchlist:
@@ -83,18 +104,18 @@ with st.sidebar:
         "Chart Style",
         ["Candlestick", "Line Chart"],
         index=0,
-        help="Switch between standard Japanese Candlesticks and a clean Line Chart."
+        help="Switch between Japanese Candlesticks and a clean Line Chart."
     )
 
     interval = st.selectbox(
         "Chart speed",
         ["1m", "5m", "15m"],
         index=0,
-        help="1m gives the fastest available intraday & extended-hours candles."
+        help="1m gives the fastest available intraday candles."
     )
 
     include_247 = st.checkbox(
-        "Include Pre-Market & After-Hours",
+        "Include Pre/Post-Market",
         value=True,
         help="Pulls 4:00 AM – 8:00 PM EST extended session data."
     )
@@ -127,7 +148,7 @@ with st.sidebar:
     auto = st.checkbox("Turn on auto-refresh", value=True)
 
     st.markdown("---")
-    st.caption("Uses fastest available Yahoo Finance extended-hours feed (8s refresh).")
+    st.caption("Terminal powered by Yahoo Finance extended feed.")
 
 # ---------- Market Session Helper ----------
 def get_market_session():
@@ -138,13 +159,13 @@ def get_market_session():
     if weekday >= 5:
         return "Weekend / Overnight (Closed)", now_est
     if dtime(4, 0) <= t < dtime(9, 30):
-        return "Pre-Market (Extended Hours)", now_est
+        return "Pre-Market (Extended)", now_est
     elif dtime(9, 30) <= t < dtime(16, 0):
         return "Regular Market Open", now_est
     elif dtime(16, 0) <= t < dtime(20, 0):
-        return "After-Hours (Extended Session)", now_est
+        return "After-Hours (Extended)", now_est
     else:
-        return "Overnight Session (4AM–8PM Feed Paused)", now_est
+        return "Overnight Session", now_est
 
 # ---------- Data & Indicators ----------
 @st.cache_data(ttl=5, show_spinner=False)
@@ -229,6 +250,17 @@ def add_indicators(df):
         (df["Low"] - prev_close).abs()
     ], axis=1).max(axis=1)
     df["ATR"] = tr.ewm(alpha=1/14, min_periods=14, adjust=False).mean().fillna(df["Close"] * 0.003)
+    
+    # Generate Buy / Sell Signal Markers for Chart
+    df["Signal"] = "HOLD"
+    above_vwap = df["Close"] > df["VWAP"]
+    below_vwap = df["Close"] < df["VWAP"]
+    ema_up = df["EMA9"] > df["EMA20"]
+    ema_down = df["EMA9"] < df["EMA20"]
+    
+    df.loc[above_vwap & ema_up & (df["RSI"] < 70), "Signal"] = "BUY"
+    df.loc[below_vwap & ema_down & (df["RSI"] > 30), "Signal"] = "SELL"
+    
     return df
 
 def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_ratio):
@@ -400,7 +432,8 @@ def render_dashboard():
         )
         limit_hit = today_pnl <= -st.session_state.daily_loss_limit
 
-        st.markdown(f"## {ticker} — ${price:.2f}")
+        # Header & Ticker Bar
+        st.markdown(f"## 📊 {ticker} — ${price:.2f}")
         st.caption(
             f"Session: **{session_label}**  •  EST Time: {now_est.strftime('%I:%M:%S %p')}  •  "
             f"Last Candle: {age_str}  •  Refresh: {refresh_sec}s"
@@ -412,6 +445,7 @@ def render_dashboard():
         if limit_hit:
             st.error(f"Daily loss limit reached (${st.session_state.daily_loss_limit:.0f}). Stop trading for today.")
 
+        # Metrics Row
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Current Price", f"${price:.2f}")
         c2.metric("VWAP (Fair Value)", f"${sig['vwap']:.2f}")
@@ -419,7 +453,16 @@ def render_dashboard():
         c4.metric("Setup Score", f"{sig['score']}/5")
         c5.metric("15-min Trend", get_higher_tf_bias(ticker, include_247))
 
-        st.markdown("#### Live Price Targets & Trade Zones")
+        # Advanced Pro Metrics Bar (if Advanced mode selected)
+        if dash_mode == "Advanced (Pro)":
+            st.markdown("##### 🔬 Advanced Pro Telemetry")
+            ac1, ac2, ac3, ac4 = st.columns(4)
+            ac1.metric("ATR (Volatility)", f"${df.iloc[-1]['ATR']:.2f}")
+            ac2.metric("Volume vs MA", f"{df.iloc[-1]['Volume'] / max(df.iloc[-1]['Volume_MA'], 1):.2f}x")
+            ac3.metric("EMA 9 / EMA 20 Spread", f"${df.iloc[-1]['EMA9'] - df.iloc[-1]['EMA20']:+.2f}")
+            ac4.metric("Session High / Low", f"${df.tail(45)['High'].max():.2f} / ${df.tail(45)['Low'].min():.2f}")
+
+        st.markdown("#### 🎯 Live Price Targets & Trade Zones")
         t1, t2, t3, t4 = st.columns(4)
         buy_delta = ((sig["ideal_buy"] - price) / price) * 100
         sell_delta = ((sig["ideal_sell"] - price) / price) * 100
@@ -437,11 +480,11 @@ def render_dashboard():
 
         left, right = st.columns(2)
         with left:
-            st.markdown("#### Why this setup?")
+            st.markdown("#### 💡 Why this setup?")
             for r in sig["reasons"]:
                 st.markdown(f"- {r}")
 
-            with st.expander("How are Ideal Buy, Sell & Targets calculated?"):
+            with st.expander("📖 How are Ideal Buy, Sell & Targets calculated?"):
                 st.markdown("""
 - **Ideal Buy Price**: Anchored to VWAP / EMA 9 pullback support in an uptrend, or lower volatility support in a downtrend.
 - **Ideal Sell Price**: Anchored to your Reward-to-Risk ratio above the Ideal Buy.
@@ -450,7 +493,7 @@ def render_dashboard():
                 """)
 
         with right:
-            st.markdown("#### Suggested Trade Plan")
+            st.markdown("#### ⚡ Suggested Trade Plan")
             st.markdown(f"**Ideal Entry**: `${sig['ideal_buy']:.2f}`  |  **Stop Loss**: `${sig['stop']:.2f}`  |  **Take Profit**: `${sig['ideal_sell']:.2f}`")
 
             risk_dollars = st.session_state.account_size * risk_pct
@@ -504,7 +547,7 @@ def render_dashboard():
                         })
                         st.rerun()
 
-        # ---------- DYNAMIC CHART (Candlestick or Line) ----------
+        # ---------- DYNAMIC CHART WITH BUY/SELL MARKERS ----------
         plot_df = df.tail(90)
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.78, 0.22], vertical_spacing=0.02)
 
@@ -526,6 +569,27 @@ def render_dashboard():
         fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA9"], name="EMA 9", line=dict(color="#ff9800", width=1.3)), row=1, col=1)
         fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA20"], name="EMA 20", line=dict(color="#ab47bc", width=1.3)), row=1, col=1)
 
+        # Add Buy & Sell signal markers directly on the chart
+        buy_signals = plot_df[plot_df["Signal"] == "BUY"]
+        sell_signals = plot_df[plot_df["Signal"] == "SELL"]
+
+        if not buy_signals.empty:
+            fig.add_trace(go.Scatter(
+                x=buy_signals.index, y=buy_signals["Low"] * 0.998,
+                mode="markers",
+                marker=dict(symbol="triangle-up", size=12, color="#089981", line=dict(width=1, color="white")),
+                name="Buy Signal"
+            ), row=1, col=1)
+
+        if not sell_signals.empty:
+            fig.add_trace(go.Scatter(
+                x=sell_signals.index, y=sell_signals["High"] * 1.002,
+                mode="markers",
+                marker=dict(symbol="triangle-down", size=12, color="#f23645", line=dict(width=1, color="white")),
+                name="Sell / Short Signal"
+            ), row=1, col=1)
+
+        # Target lines
         fig.add_hline(y=sig["ideal_buy"], line_dash="dot", line_color="#089981", annotation_text=f"Ideal Buy ${sig['ideal_buy']:.2f}", row=1, col=1)
         fig.add_hline(y=sig["ideal_sell"], line_dash="dot", line_color="#f23645", annotation_text=f"Ideal Sell ${sig['ideal_sell']:.2f}", row=1, col=1)
         fig.add_hline(y=sig["hourly_target"], line_dash="dash", line_color="#00bcd4", annotation_text=f"1H Target ${sig['hourly_target']:.2f}", row=1, col=1)
@@ -550,7 +614,7 @@ def render_dashboard():
 
         # ---------- PAPER TRADE LOG ----------
         st.markdown("---")
-        st.markdown("### Practice Trade Log")
+        st.markdown("### 📝 Practice Trade Log")
         st.info(f"Today's practice P&L: **${today_pnl:+.2f}**  •  Daily limit: ${st.session_state.daily_loss_limit:.0f}")
 
         open_trades = [t for t in st.session_state.paper_trades if t["status"] == "OPEN"]
@@ -601,6 +665,11 @@ def render_dashboard():
             st.session_state.paper_trades = []
             st.rerun()
 
+        # Advanced Raw Inspector Tab
+        if dash_mode == "Advanced (Pro)":
+            with st.expander("🔍 Inspect Raw Indicator DataFrame"):
+                st.dataframe(df.tail(15), use_container_width=True)
+
     except Exception as e:
         st.error(f"Something went wrong: {e}")
 
@@ -608,7 +677,7 @@ render_dashboard()
 
 st.markdown("---")
 st.warning("""
-**Please read this**  
-This tool uses free Yahoo Finance data (including extended pre/post-market hours) and is only for learning and practice.  
-It does **not** guarantee profits. Always use a stop loss and never risk money you cannot afford to lose.
+**Disclaimer**  
+This tool uses free Yahoo Finance data and is for educational paper-trading only.  
+It does not guarantee profits. Always manage your risk.
 """)
