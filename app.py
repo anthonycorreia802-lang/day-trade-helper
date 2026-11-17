@@ -1003,7 +1003,7 @@ def render_dashboard():
         if short_col.button(
             f"🔻 Paper SHORT · {short_qty_text} {short_calc.get('unit', 'shares')}",
             key=f"quick_auto_short_{ticker}",
-            type="secondary",
+            type="primary",
             use_container_width=True,
             disabled=short_disabled,
             help="Opens the automatically sized simulated SHORT position. It has a stop above entry and target below entry. Paper practice only.",
