@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Modern Cyber-Terminal Dark Theme CSS
+# Modern Cyber-Terminal Dark Theme CSS with Fixes for Expanders and Form Contrast
 st.markdown("""
 <style>
     .stApp { background: linear-gradient(135deg, #07090e 0%, #0b0e14 100%); color: #e2e8f0; }
@@ -52,6 +52,18 @@ st.markdown("""
     
     h1, h2, h3, h4 { color: #f8fafc !important; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
     
+    /* Fix Expander & Background Flash Contrast */
+    .streamlit-expanderHeader, div[data-testid="stExpander"] {
+        background-color: #121824 !important;
+        color: #f8fafc !important;
+        border: 1px solid #1e293b !important;
+        border-radius: 8px;
+    }
+    div[data-testid="stExpander"] div[role="region"] {
+        background-color: #0b0e14 !important;
+        color: #e2e8f0 !important;
+    }
+
     /* Modern Action Banners */
     .action-banner {
         font-size: 1.8rem;
@@ -142,26 +154,30 @@ with st.sidebar:
         help="Pulls 4:00 AM – 8:00 PM EST extended session data."
     )
 
+    # Expanded Account Size Range ($50 to $100,000+)
     st.session_state.account_size = st.number_input(
         "Account Size ($)",
-        min_value=1000.0,
+        min_value=50.0,
+        max_value=1000000.0,
         value=st.session_state.account_size,
-        step=1000.0
+        step=500.0
     )
 
+    # Expanded Risk Percentage Range (up to 5.0%)
     risk_pct = st.slider(
         "Risk Per Trade (%)",
-        0.25, 1.0, 0.5, 0.25
+        0.1, 5.0, 0.5, 0.1
     ) / 100
 
+    # Expanded Reward-to-Risk Range (up to 5.0x)
     rr_ratio = st.slider(
         "Reward-to-Risk Target",
-        1.2, 3.0, 1.8, 0.1
+        1.0, 5.0, 1.8, 0.1
     )
 
     st.session_state.daily_loss_limit = st.number_input(
         "Max Daily Loss ($)",
-        min_value=50.0,
+        min_value=10.0,
         value=st.session_state.daily_loss_limit,
         step=50.0
     )
@@ -471,7 +487,7 @@ def render_dashboard():
         if limit_hit:
             st.error(f"⚠️ Daily loss limit reached (${st.session_state.daily_loss_limit:.0f}). Stop trading for today.")
 
-        # Metrics Row with built-in Beginner Info Tooltips (ⓘ icons)
+        # Metrics Row with Info Tooltips
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Current Price", f"${price:.2f}", help="The latest traded price of the stock right now.")
         c2.metric("VWAP (Fair Value)", f"${sig['vwap']:.2f}", help="VWAP = Volume-Weighted Average Price. Think of it as the 'fair average price' for today. Price above VWAP = buyers in control.")
@@ -510,7 +526,7 @@ def render_dashboard():
             for r in sig["reasons"]:
                 st.markdown(f"- {r}")
 
-            # Beginner Glossary / Explain for Dummies Box
+            # Beginner Glossary / Dark-Themed Expander
             with st.expander("👶 Beginner's Guide: What do these terms mean?"):
                 st.markdown("""
 - **VWAP (Fair Value Line)**: The average price people paid today, weighted by volume. If price is above VWAP, buyers are winning. If below, sellers are winning.
@@ -556,7 +572,7 @@ def render_dashboard():
                         })
                         st.rerun()
 
-                    if b2.button(f"🔻 Paper SHORT @ ${price:.2f}", use_container_width=True):
+                    if b2.button(f"🔻 Paper SHORT @ ${price:.2f}", type="secondary", use_container_width=True):
                         short_stop = round(price + stop_dist, 2)
                         short_target = round(price - stop_dist * rr_ratio, 2)
                         st.session_state.paper_trades.append({
@@ -750,7 +766,7 @@ def render_dashboard():
                     "📥 Export Journal as CSV",
                     csv_buffer.getvalue(),
                     file_name=f"trading_journal_{date.today()}.csv",
-                    mime="text/css"
+                    mime="text/csv"
                 )
             with col_clr:
                 if st.button("🗑️ Clear Journal History"):
