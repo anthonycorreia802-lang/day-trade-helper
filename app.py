@@ -300,7 +300,7 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         reasons = [
             f"Price (${price:.2f}) is right inside your ideal buy zone (${ideal_buy:.2f})",
             "Trading above VWAP with bullish EMA 9 > EMA 20 alignment",
-            f"Targeting ${ideal_sell:.2f} with stop at${stop:.2f}"
+            f"Targeting ${ideal_sell:.2f} with stop at ${stop:.2f}"
         ]
         side = "LONG"
         score = long_score
@@ -333,7 +333,7 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         action = "WAIT"
         reasons = [
             "Price is below VWAP or consolidating without clear momentum",
-            f"Watch for a reclaim above VWAP (${vwap:.2f}) or bounce near${ideal_buy:.2f}"
+            f"Watch for a reclaim above VWAP (${vwap:.2f}) or bounce near ${ideal_buy:.2f}"
         ]
         side = "None"
         score = max(long_score, short_score)
@@ -467,3 +467,148 @@ def render_dashboard():
                 b1, b2 = st.columns(2)
                 if already_open:
                     st.info(f"You already have an open paper trade on {ticker}.")
+                else:
+                    if b1.button(f"Paper BUY @ ${price:.2f}", type="primary", use_container_width=True):
+                        st.session_state.paper_trades.append({
+                            "id": str(uuid.uuid4())[:8],
+                            "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "ticker": ticker,
+                            "side": "LONG",
+                            "entry": round(price, 2),
+                            "stop": sig["stop"],
+                            "target": sig["ideal_sell"],
+                            "shares": shares,
+                            "status": "OPEN",
+                            "exit": None,
+                            "pnl": None,
+                            "notes": "Market/Live entry"
+                        })
+                        st.rerun()
+
+                    if b2.button(f"Paper SHORT @ ${price:.2f}", use_container_width=True):
+                        short_stop = round(price + stop_dist, 2)
+                        short_target = round(price - stop_dist * rr_ratio, 2)
+                        st.session_state.paper_trades.append({
+                            "id": str(uuid.uuid4())[:8],
+                            "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "ticker": ticker,
+                            "side": "SHORT",
+                            "entry": round(price, 2),
+                            "stop": short_stop,
+                            "target": short_target,
+                            "shares": shares,
+                            "status": "OPEN",
+                            "exit": None,
+                            "pnl": None,
+                            "notes": "Short entry"
+                        })
+                        st.rerun()
+
+        # ---------- DYNAMIC CHART (Candlestick or Line) ----------
+        plot_df = df.tail(90)
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.78, 0.22], vertical_spacing=0.02)
+
+        if chart_type == "Candlestick":
+            fig.add_trace(go.Candlestick(
+                x=plot_df.index, open=plot_df["Open"], high=plot_df["High"], low=plot_df["Low"], close=plot_df["Close"],
+                name="Price",
+                increasing_line_color="#089981", decreasing_line_color="#f23645",
+                increasing_fillcolor="#089981", decreasing_fillcolor="#f23645"
+            ), row=1, col=1)
+        else:
+            fig.add_trace(go.Scatter(
+                x=plot_df.index, y=plot_df["Close"],
+                name="Close Price",
+                line=dict(color="#2962ff", width=2.5)
+            ), row=1, col=1)
+
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["VWAP"], name="VWAP", line=dict(color="#ffeb3b", width=2)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA9"], name="EMA 9", line=dict(color="#ff9800", width=1.3)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA20"], name="EMA 20", line=dict(color="#ab47bc", width=1.3)), row=1, col=1)
+
+        fig.add_hline(y=sig["ideal_buy"], line_dash="dot", line_color="#089981", annotation_text=f"Ideal Buy ${sig['ideal_buy']:.2f}", row=1, col=1)
+        fig.add_hline(y=sig["ideal_sell"], line_dash="dot", line_color="#f23645", annotation_text=f"Ideal Sell ${sig['ideal_sell']:.2f}", row=1, col=1)
+        fig.add_hline(y=sig["hourly_target"], line_dash="dash", line_color="#00bcd4", annotation_text=f"1H Target ${sig['hourly_target']:.2f}", row=1, col=1)
+
+        colors = ["#089981" if c >= o else "#f23645" for c, o in zip(plot_df["Close"], plot_df["Open"])]
+        fig.add_trace(go.Bar(x=plot_df.index, y=plot_df["Volume"], name="Volume", marker_color=colors, opacity=0.5), row=2, col=1)
+
+        fig.update_layout(
+            height=520,
+            paper_bgcolor="#131722",
+            plot_bgcolor="#131722",
+            font=dict(color="#d1d4dc"),
+            margin=dict(l=0, r=10, t=10, b=0),
+            xaxis_rangeslider_visible=False,
+            showlegend=True,
+            legend=dict(orientation="h", y=1.02, x=0, bgcolor="rgba(0,0,0,0)"),
+            xaxis=dict(gridcolor="#2a2e39", type="category", nticks=10),
+            yaxis=dict(gridcolor="#2a2e39", side="right"),
+            yaxis2=dict(gridcolor="#2a2e39", side="right"),
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+        # ---------- PAPER TRADE LOG ----------
+        st.markdown("---")
+        st.markdown("### Practice Trade Log")
+        st.info(f"Today's practice P&L: **${today_pnl:+.2f}**  •  Daily limit: ${st.session_state.daily_loss_limit:.0f}")
+
+        open_trades = [t for t in st.session_state.paper_trades if t["status"] == "OPEN"]
+        closed_trades = [t for t in st.session_state.paper_trades if t["status"] == "CLOSED"]
+
+        if open_trades:
+            st.markdown("#### Open Practice Trades")
+            for t in open_trades:
+                live_px = price if t["ticker"] == ticker else (get_fast_quote(t["ticker"]) or t["entry"])
+                unrealized = (live_px - t["entry"]) * t["shares"] if t["side"] == "LONG" else (t["entry"] - live_px) * t["shares"]
+
+                cols = st.columns([1.2, 0.9, 0.9, 1.0, 1.2, 1.0])
+                cols[0].write(f"**{t['ticker']}** ({t['side']})\n\n{t['shares']} sh")
+                cols[1].write(f"Entry: `${t['entry']}`\n\nLive: `${live_px:.2f}`")
+                cols[2].write(f"Stop: `${t['stop']}`\n\nTarget: `${t['target']}`")
+                cols[3].write(f"Unrealized:\n\n**${unrealized:+.2f}**")
+                exit_px = cols[4].number_input("Exit price", value=float(live_px), key=f"ex_{t['id']}", format="%.2f")
+                if cols[5].button("Close trade", key=f"cl_{t['id']}", use_container_width=True):
+                    pnl = (exit_px - t["entry"]) * t["shares"] if t["side"] == "LONG" else (t["entry"] - exit_px) * t["shares"]
+                    t["exit"] = exit_px
+                    t["pnl"] = round(pnl, 2)
+                    t["status"] = "CLOSED"
+                    st.rerun()
+
+        if closed_trades:
+            st.markdown("#### Closed Practice Trades")
+            cdf = pd.DataFrame(closed_trades)
+            st.dataframe(
+                cdf[["time", "ticker", "side", "entry", "exit", "shares", "pnl", "notes"]],
+                use_container_width=True,
+                hide_index=True
+            )
+
+            total_pnl = sum(t["pnl"] for t in closed_trades if t["pnl"] is not None)
+            wins = len([t for t in closed_trades if t["pnl"] and t["pnl"] > 0])
+            st.write(f"Total practice P&L: **${total_pnl:+.2f}**  •  Wins: {wins}/{len(closed_trades)}")
+
+            csv_buffer = io.StringIO()
+            cdf.to_csv(csv_buffer, index=False)
+            st.download_button(
+                "Download trades as CSV",
+                csv_buffer.getvalue(),
+                file_name=f"paper_trades_{date.today()}.csv",
+                mime="text/csv"
+            )
+
+        if st.session_state.paper_trades and st.button("Clear all practice trades"):
+            st.session_state.paper_trades = []
+            st.rerun()
+
+    except Exception as e:
+        st.error(f"Something went wrong: {e}")
+
+render_dashboard()
+
+st.markdown("---")
+st.warning("""
+**Please read this**  
+This tool uses free Yahoo Finance data (including extended pre/post-market hours) and is only for learning and practice.  
+It does **not** guarantee profits. Always use a stop loss and never risk money you cannot afford to lose.
+""")
