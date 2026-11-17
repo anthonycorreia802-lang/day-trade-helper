@@ -22,95 +22,81 @@ st.set_page_config(
 # Modern Cyber-Terminal Dark Theme CSS with Fixes for Expanders and Form Contrast
 st.markdown("""
 <style>
-    .stApp { background: linear-gradient(135deg, #07090e 0%, #0b0e14 100%); color: #e2e8f0; }
-    /* Keep the full terminal readable and prevent widgets from being clipped. */
-    .block-container { max-width: 1900px; padding-top: 1.15rem; padding-bottom: 2rem; padding-left: clamp(1rem, 2vw, 2.5rem); padding-right: clamp(1rem, 2vw, 2.5rem); }
-    div[data-testid="stPlotlyChart"], div[data-testid="stDataFrame"] { width: 100%; max-width: 100%; }
-    div[data-testid="stHorizontalBlock"] { gap: 0.8rem; align-items: stretch; }
-    div[data-testid="stDataFrame"] { min-width: 0; max-width: 100%; }
-    div[data-testid="stMetric"] { min-width: 0; overflow-wrap: anywhere; }
-    .stMarkdown, .stCaption { overflow-wrap: anywhere; }
-    .stButton button { white-space: normal; min-height: 2.5rem; }
-    @media (max-width: 1100px) {
-        div[data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
-        div[data-testid="column"] { min-width: min(100%, 220px) !important; }
-    }
-    @media (max-width: 900px) {
-        .block-container { padding-left: 0.8rem; padding-right: 0.8rem; }
-        .action-banner { font-size: 1.25rem !important; }
-    }
-    
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: #0f141f;
-        border-right: 1px solid #1e293b;
-    }
-    section[data-testid="stSidebar"] label, 
-    section[data-testid="stSidebar"] span, 
-    section[data-testid="stSidebar"] p,
-    section[data-testid="stSidebar"] .stMarkdown {
-        color: #f8fafc !important;
-        font-weight: 500;
-    }
-    section[data-testid="stSidebar"] .stButton button {
-        background-color: #1a2234 !important;
-        color: #f8fafc !important;
-        border: 1px solid #334155 !important;
-        border-radius: 8px;
-        font-weight: 600;
-        transition: all 0.2s ease;
-    }
-    section[data-testid="stSidebar"] .stButton button:hover {
-        background-color: #2563eb !important;
-        border-color: #60a5fa !important;
-        color: #ffffff !important;
-        box-shadow: 0 0 12px rgba(37, 99, 235, 0.4);
-    }
-    
-    h1, h2, h3, h4 { color: #f8fafc !important; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-    
-    /* Fix Expander & Background Flash Contrast */
-    .streamlit-expanderHeader, div[data-testid="stExpander"] {
-        background-color: #121824 !important;
-        color: #f8fafc !important;
-        border: 1px solid #1e293b !important;
-        border-radius: 8px;
-    }
-    div[data-testid="stExpander"] div[role="region"] {
-        background-color: #0b0e14 !important;
-        color: #e2e8f0 !important;
-    }
-
-    /* Modern Action Banners */
-    .action-banner {
-        font-size: 1.8rem;
-        font-weight: 800;
-        text-align: center;
-        padding: 14px;
-        border-radius: 12px;
-        margin: 10px 0 16px 0;
-        letter-spacing: 0.5px;
-        box-shadow: 0 8px 25px rgba(0,0,0,0.5);
-    }
-    .buy   { background: linear-gradient(135deg, #059669, #047857); color: white; border: 1px #10b981 solid; }
-    .short { background: linear-gradient(135deg, #dc2626, #b91c1c); color: white; border: 1px #f87171 solid; }
-    .watch { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; border: 1px #60a5fa solid; }
-    
-    /* Glassmorphism Metric Cards */
-    div[data-testid="stMetric"] {
-        background: rgba(18, 24, 36, 0.85);
-        backdrop-filter: blur(12px);
-        border: 1px solid #1e293b;
-        border-radius: 12px;
-        padding: 14px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    }
-    div[data-testid="stMetric"] label { color: #94a3b8 !important; font-size: 0.9rem !important; }
-    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-        color: #ffffff !important;
-        font-size: 1.4rem !important;
-        font-weight: 700;
-    }
+:root {
+  --terminal-bg: #080c13;
+  --panel: #101824;
+  --panel-soft: #131e2c;
+  --line: #243247;
+  --muted: #91a2b8;
+  --text: #e8eef7;
+  --accent: #38bdf8;
+  --green: #20c997;
+  --red: #fb7185;
+}
+.stApp { background: radial-gradient(ellipse at 50% -18%, #17283d 0%, #0a101a 42%, var(--terminal-bg) 78%); color: var(--text); }
+.block-container { max-width: 1840px; padding: 1.15rem clamp(.85rem, 2vw, 2rem) 2.5rem; }
+header[data-testid="stHeader"] { background: rgba(8,12,19,.78); }
+[data-testid="stAppViewContainer"] > .main { background: transparent; }
+h1,h2,h3,h4 { color: #f4f8ff !important; letter-spacing: -.025em; }
+h1 { font-weight: 850 !important; }
+h2,h3 { font-weight: 750 !important; }
+p, label, .stMarkdown, .stCaption { overflow-wrap: anywhere; }
+.stCaption, [data-testid="stCaptionContainer"] { color: var(--muted) !important; }
+hr { border-color: #263449 !important; margin: 1.25rem 0 !important; }
+/* Sidebar */
+section[data-testid="stSidebar"] { background: linear-gradient(180deg,#101a28 0%,#0b111b 100%); border-right: 1px solid #263449; }
+section[data-testid="stSidebar"] > div { padding-top: 1.2rem; }
+section[data-testid="stSidebar"] h3 { color: #f2f7ff !important; }
+section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] span { color: #dce6f3 !important; }
+/* Inputs */
+.stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] > div,
+.stMultiSelect [data-baseweb="select"] > div, .stTextArea textarea {
+  background: #0b1320 !important; color: #edf5ff !important;
+  border: 1px solid #2a3b52 !important; border-radius: 9px !important;
+}
+[data-baseweb="popover"] { color: #eaf1fb; }
+/* Buttons */
+.stButton button, .stDownloadButton button {
+  border: 1px solid #344861; border-radius: 9px; font-weight: 650;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+  min-height: 2.55rem; white-space: normal;
+}
+.stButton button:hover, .stDownloadButton button:hover { border-color: #56b4e9; transform: translateY(-1px); }
+.stButton button[kind="primary"] { background: linear-gradient(135deg,#087cae,#155e9a); border-color: #269bd0; color: white; }
+section[data-testid="stSidebar"] .stButton button { background: #172438; color: #eaf2fc; border-color: #30445e; }
+/* Cards and metrics */
+div[data-testid="stMetric"] {
+  background: linear-gradient(145deg,rgba(20,32,48,.96),rgba(13,22,34,.96));
+  border: 1px solid #293b52; border-radius: 13px; padding: 13px 15px;
+  box-shadow: 0 7px 22px rgba(0,0,0,.18); min-width: 0; overflow-wrap: anywhere;
+}
+div[data-testid="stMetric"] label { color: #9fb1c8 !important; font-size: .82rem !important; }
+div[data-testid="stMetric"] [data-testid="stMetricValue"] { color: #f5f9ff !important; font-weight: 760; font-size: clamp(1.1rem,1.7vw,1.55rem) !important; }
+/* Data tables, charts, expanders */
+div[data-testid="stDataFrame"], div[data-testid="stPlotlyChart"] { width: 100%; max-width: 100%; }
+div[data-testid="stDataFrame"] { border: 1px solid #26364b; border-radius: 11px; overflow: hidden; }
+div[data-testid="stExpander"] { background: rgba(16,25,39,.88); border: 1px solid #293b52; border-radius: 11px; }
+div[data-testid="stExpander"] summary { color: #e8f0fb !important; font-weight: 650; }
+div[data-testid="stAlert"] { border-radius: 10px; }
+/* Signal banner */
+.action-banner { font-size: clamp(1.2rem,2.2vw,1.75rem); font-weight: 850; text-align: center; padding: 13px 16px; border-radius: 12px; margin: 12px 0 16px; letter-spacing: .035em; box-shadow: 0 8px 24px rgba(0,0,0,.24); }
+.buy { background: linear-gradient(110deg,#087f5b,#0c9b70); color: white; border: 1px solid #31c99a; }
+.short { background: linear-gradient(110deg,#a92c43,#d34257); color: white; border: 1px solid #fa7185; }
+.watch { background: linear-gradient(110deg,#174b82,#176ca5); color: white; border: 1px solid #3b9ed5; }
+/* Compact section labels */
+.terminal-kicker { color:#72c9f2; text-transform:uppercase; letter-spacing:.16em; font-size:.72rem; font-weight:800; }
+.terminal-hero { padding: 1.05rem 1.25rem; margin: .2rem 0 1rem; border:1px solid #2b4059; border-radius:15px; background:linear-gradient(115deg,rgba(20,40,62,.96),rgba(12,20,32,.96)); box-shadow:0 12px 30px rgba(0,0,0,.22); }
+.terminal-hero h1 { margin:.2rem 0 .25rem; font-size:clamp(1.55rem,3vw,2.25rem); }
+.terminal-hero p { margin:0; color:#a9bbd1; }
+@media (max-width: 1100px) {
+  div[data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap:.7rem; }
+  div[data-testid="column"] { min-width:min(100%,220px) !important; }
+}
+@media (max-width: 700px) {
+  .block-container { padding-left:.7rem; padding-right:.7rem; }
+  .terminal-hero { padding:.85rem; }
+  div[data-testid="stMetric"] { padding:10px; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1009,12 +995,18 @@ def render_dashboard():
     except Exception as e:
         st.error(f"Something went wrong: {e}")
 
-st.markdown("# ⚡ PRO DAY TRADE TERMINAL")
-st.caption("Live market monitor · technical research · paper trading")
+st.markdown("""
+<div class="terminal-hero">
+  <div class="terminal-kicker">Market intelligence · live monitoring · simulated execution</div>
+  <h1>⚡ PRO DAY TRADE TERMINAL</h1>
+  <p>A focused trading workspace with market candidates, multi-timeframe confirmation, risk planning and a built-in paper-trading journal.</p>
+</div>
+""", unsafe_allow_html=True)
 render_top_market_candidates()
 
 # ---------- STOCK SEARCH / AUTOFILL ----------
 st.markdown("## 🔎 Find a Stock")
+st.caption("Search by company name or ticker, then load it into the live workspace or save it to your watchlist.")
 search_query = st.text_input(
     "Search ticker or company name",
     placeholder="Start typing: Apple, NVDA, Microsoft…",
