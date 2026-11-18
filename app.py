@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import uuid
 import io
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote
 
 # ---------- Page Setup ----------
 st.set_page_config(
@@ -304,6 +305,27 @@ div[data-testid="stPlotlyChart"] {
   pointer-events:none;
 }
 .terminal-kicker { color:#8b9bb8; text-transform:uppercase; letter-spacing:.12em; font-size:.7rem; font-weight:700; }
+.educational-disclaimer {
+  margin: 1rem 0 1.5rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid #3a4050;
+  border-left: 3px solid #d6a84f;
+  border-radius: 8px;
+  background: #1e222d;
+  color: #d1d4dc !important;
+  line-height: 1.55;
+  font-size: .9rem;
+}
+.educational-disclaimer .disclaimer-heading {
+  color: #f0f3fa !important;
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: .45rem;
+}
+.educational-disclaimer p,
+.educational-disclaimer strong { color: #c9ced8 !important; }
+.educational-disclaimer p { margin: .3rem 0; }
+
 .terminal-hero {
   padding: .9rem 1.1rem; margin:.15rem 0 .9rem;
   border:1px solid var(--tv-border); border-radius:8px;
@@ -471,6 +493,80 @@ def price_decimals(price):
         return 2 if abs(float(price)) >= 1 else 6
     except (TypeError, ValueError):
         return 2
+
+
+def directional_price_move_pct(start_price, end_price, side="LONG"):
+    """Return a favorable-positive move percentage for the selected position side."""
+    start_price = float(start_price)
+    end_price = float(end_price)
+    side = str(side).upper()
+    if not np.isfinite(start_price) or not np.isfinite(end_price) or start_price <= 0:
+        return 0.0
+    if side == "SHORT":
+        return (start_price - end_price) / start_price * 100.0
+    return (end_price - start_price) / start_price * 100.0
+
+
+def calculate_directional_percentages(current_price, entry, stop, target, side):
+    """Calculate entry gap, planned risk and target reward with LONG/SHORT signs handled correctly.
+
+    Entry gap is a raw price difference from the current quote. Reward and risk are
+    always positive magnitudes measured from entry, so a SHORT target below entry
+    is correctly displayed as positive potential reward.
+    """
+    try:
+        current_price, entry, stop, target = map(float, (current_price, entry, stop, target))
+        side = str(side).upper()
+    except (TypeError, ValueError):
+        return {"valid": False, "reason": "Prices and side must be valid values."}
+    if (not all(np.isfinite(v) for v in (current_price, entry, stop, target))
+            or min(current_price, entry, stop, target) <= 0):
+        return {"valid": False, "reason": "All prices must be finite and above zero."}
+    if side == "LONG":
+        levels_valid = stop < entry < target
+        reward_pct = (target - entry) / entry * 100.0
+        risk_pct = (entry - stop) / entry * 100.0
+    elif side == "SHORT":
+        levels_valid = target < entry < stop
+        reward_pct = (entry - target) / entry * 100.0
+        risk_pct = (stop - entry) / entry * 100.0
+    else:
+        return {"valid": False, "reason": "Side must be LONG or SHORT."}
+    if not levels_valid:
+        return {"valid": False, "reason": "Price levels do not match the selected trade direction."}
+    return {
+        "valid": True,
+        "side": side,
+        "entry_vs_current_pct": (entry - current_price) / current_price * 100.0,
+        "target_vs_current_pct": (target - current_price) / current_price * 100.0,
+        "stop_vs_current_pct": (stop - current_price) / current_price * 100.0,
+        "reward_pct": reward_pct,
+        "risk_pct": risk_pct,
+        "reward_to_risk": reward_pct / risk_pct if risk_pct > 0 else 0.0,
+    }
+
+
+def paper_trade_return_pct(pnl, entry_price, quantity):
+    """Return P&L as a percentage of entry notional (entry price × shares/units)."""
+    try:
+        pnl, entry_price, quantity = float(pnl), float(entry_price), float(quantity)
+    except (TypeError, ValueError):
+        return None
+    notional = entry_price * quantity
+    if not all(np.isfinite(v) for v in (pnl, entry_price, quantity)) or notional <= 0:
+        return None
+    return pnl / notional * 100.0
+
+
+def robinhood_asset_url(symbol):
+    """Build the official Robinhood asset detail URL for stocks/ETFs or USD crypto pairs."""
+    symbol = str(symbol or "").strip().upper()
+    if not symbol:
+        return "https://robinhood.com/"
+    if symbol.endswith("-USD"):
+        asset_code = symbol[:-4]
+        return f"https://robinhood.com/us/en/crypto/{quote(asset_code.lower(), safe='')}/"
+    return f"https://robinhood.com/us/en/stocks/{quote(symbol.lower(), safe='')}/"
 
 
 def calculate_position_size(account_size, risk_fraction, entry, stop, target, is_crypto=False):
@@ -727,15 +823,22 @@ def build_reward_assessment(signal, adaptive_model=None, trend_bias="Unavailable
     entry = float(plan["entry"])
     stop = float(plan["stop"])
     target = float(plan["target"])
-    potential_reward_pct = abs(target - entry) / max(entry, 0.000001) * 100
-    risk_pct = abs(entry - stop) / max(entry, 0.000001) * 100
+    percent_metrics = calculate_directional_percentages(price, entry, stop, target, side)
+    if not percent_metrics.get("valid"):
+        potential_reward_pct = None
+        risk_pct = None
+        reward_to_risk = None
+    else:
+        potential_reward_pct = percent_metrics["reward_pct"]
+        risk_pct = percent_metrics["risk_pct"]
+        reward_to_risk = percent_metrics["reward_to_risk"]
     pattern_estimate = predict_adaptive_model(
         adaptive_model, directional_learning_features(signal, side)
     ) if adaptive_model else None
     return {
         "side": side, "score": score, "label": label, "plan": plan,
         "potential_reward_pct": potential_reward_pct, "risk_pct": risk_pct,
-        "reward_to_risk": potential_reward_pct / max(risk_pct, 0.000001),
+        "reward_to_risk": reward_to_risk,
         "pattern_estimate": pattern_estimate, "trend_matches": trend_matches,
         "reasons": reasons,
     }
@@ -1602,22 +1705,51 @@ def render_dashboard():
             ac3.metric("EMA 9 / EMA 20 Spread", f"${df.iloc[-1]['EMA9'] - df.iloc[-1]['EMA20']:+,.{ticker_digits}f}", help="Distance between short-term trend averages.")
             ac4.metric("Session High / Low", f"${df.tail(45)['High'].max():,.{ticker_digits}f} / ${df.tail(45)['Low'].min():,.{ticker_digits}f}", help="Highest and lowest prices reached in the current trading window.")
 
-        info_heading("🎯 Live Price Targets & Trade Zones", "Illustrative entry, stop and target levels calculated from the selected chart interval and reward-to-risk setting.", 4)
-        t1, t2, t3, t4 = st.columns(4)
-        buy_delta = ((sig["ideal_buy"] - price) / price) * 100
-        sell_delta = ((sig["ideal_sell"] - price) / price) * 100
-        hr_delta = ((sig["hourly_target"] - price) / price) * 100
-        day_delta = ((sig["daily_target"] - price) / price) * 100
-
-        t1.metric("Ideal Buy Price", f"${sig['ideal_buy']:,.{ticker_digits}f}", f"{buy_delta:+.2f}% from now", help="The recommended entry price based on pullback support so you don't chase peaks.")
-        t2.metric("Ideal Sell Price", f"${sig['ideal_sell']:,.{ticker_digits}f}", f"{sell_delta:+.2f}% from now", help="Your target exit price for taking profit based on your Reward-to-Risk ratio.")
-        t3.metric("Hourly Target (1H)", f"${sig['hourly_target']:,.{ticker_digits}f}", f"{hr_delta:+.2f}% projected", help="Expected price movement over the next hour based on volatility.")
-        t4.metric(
-            "Daily Target (EOD)",
-            f"${sig['daily_target']:,.{ticker_digits}f}",
-            f"{day_delta:+.2f}% (Range: ${sig['daily_range'][0]}–${sig['daily_range'][1]})",
-            help="Projected end-of-day price boundary based on 14-day average volatility."
+        info_heading("🎯 Live Price Targets & Trade Zones", "Entry gap is measured from the current quote. Target reward and stop risk are measured from the planned entry; reward stays positive for a valid SHORT target below entry.", 4)
+        price_plan_side = sig["side"] if sig.get("side") in {"LONG", "SHORT"} else ("LONG" if sig["long_score"] >= sig["short_score"] else "SHORT")
+        price_plan = build_quick_trade_plan(
+            sig, price, max(float(sig["stop_dist"]), price * 0.0025, 0.000001),
+            rr_ratio, price_plan_side, ticker_digits
         )
+        price_pcts = calculate_directional_percentages(
+            price, price_plan["entry"], price_plan["stop"], price_plan["target"], price_plan_side
+        )
+        t1, t2, t3 = st.columns(3)
+        t1.metric(
+            f"Planned Entry ({price_plan_side})",
+            f"${price_plan['entry']:,.{ticker_digits}f}",
+            f"{price_pcts['entry_vs_current_pct']:+.2f}% vs current",
+            help="The entry level for the stronger current technical side. The percentage compares this entry price with the latest quote; negative means below the quote and positive means above it."
+        )
+        t2.metric(
+            "Profit Target",
+            f"${price_plan['target']:,.{ticker_digits}f}",
+            f"+{price_pcts['reward_pct']:.2f}% potential reward",
+            help="Favorable percentage move from planned entry to target. It is positive for both LONG and SHORT plans and is not a probability of reaching the target."
+        )
+        t3.metric(
+            "Stop Loss",
+            f"${price_plan['stop']:,.{ticker_digits}f}",
+            f"-{price_pcts['risk_pct']:.2f}% planned risk",
+            help="Adverse percentage move from planned entry to stop. The estimated loss also depends on position size and can differ from real fills."
+        )
+        h1, h2 = st.columns(2)
+        hourly_directional_pct = directional_price_move_pct(price, sig["hourly_target"], price_plan_side)
+        daily_directional_pct = directional_price_move_pct(price, sig["daily_target"], price_plan_side)
+        h1.metric(
+            "1H Directional Projection",
+            f"${sig['hourly_target']:,.{ticker_digits}f}",
+            f"{hourly_directional_pct:+.2f}% favorable-side move",
+            help="Estimated one-hour volatility projection. A positive percentage means movement in the selected LONG/SHORT direction; this is not a forecast."
+        )
+        h2.metric(
+            "Daily Directional Projection",
+            f"${sig['daily_target']:,.{ticker_digits}f}",
+            f"{daily_directional_pct:+.2f}% favorable-side move",
+            help=f"Estimated directional move from the current quote. Reference range: ${sig['daily_range'][0]:,.{ticker_digits}f} to ${sig['daily_range'][1]:,.{ticker_digits}f}. This is not a forecast."
+        )
+        if sig.get("side") == "None":
+            st.caption("No confirmed directional setup. The entry/stop/target values above are a reference plan based on the stronger score, not a trade signal.")
 
         info_heading("💡 Why this setup?", "A short explanation of which technical checks are supporting or weakening the current signal.", 4)
         for r in sig["reasons"]:
@@ -1642,7 +1774,9 @@ def render_dashboard():
 - **Entry Price**: The price used to start the simulated trade.
 - **Stop Loss**: The planned exit level if price moves against the idea. Actual market fills can differ from a stop level.
 - **Take Profit / Target**: The planned price where the simulation aims to take a gain.
-- **Potential Reward**: The amount the target would make if reached. It is a scenario, not a forecast or guarantee.
+- **Entry % vs. Current**: How far the planned entry is from the latest quote. A minus sign means the entry is below the current price; a plus sign means it is above.
+- **Potential Reward %**: The favorable percentage move from entry to target. It is shown as positive for both LONG and SHORT plans; it is not the chance of reaching the target.
+- **Stop Risk %**: The adverse percentage move from entry to stop. The dollar risk also depends on how many shares or units are held.
 - **Reward-to-Risk (R/R)**: Potential reward divided by planned risk. A 2:1 setup targets two dollars for each dollar at risk; it does not mean a 2-in-1 chance of winning.
 - **Position Size (Shares / Units)**: How many shares or crypto units the calculator suggests, based on the risk budget and stop distance.
 - **Risk Per Trade**: The share of the paper account you plan to lose at most if the stop is reached.
@@ -1663,7 +1797,10 @@ def render_dashboard():
 - **ATR Stop Distance**: The quick calculator uses the larger of 1.25× ATR or 0.25% of price to establish a volatility-aware stop gap.
 - **Position Sizing**: Quantity is constrained by risk budget ÷ entry-to-stop distance and by account buying power. Stocks are whole shares; crypto permits fractional units.
 - **Reward-to-Risk**: Absolute entry-to-target distance divided by entry-to-stop distance, before spread, commission, slippage, borrow fees or taxes.
-- **Potential Reward %**: Absolute target distance as a percentage of planned entry. It is not the probability of reaching the target.
+- **Entry Gap %**: (planned entry ÷ current quote − 1) × 100. It is signed to show whether the planned entry is above or below the live reference quote.
+- **Potential Reward %**: Directional entry-to-target distance ÷ entry × 100. It is positive when the plan's target is favorable for its LONG or SHORT side; it is not a probability.
+- **Stop Risk %**: Directional entry-to-stop distance ÷ entry × 100. This is a price-risk percentage, not the account-risk percentage.
+- **Paper Trade Return %**: Direction-adjusted P&L ÷ (entry × shares/units) × 100. **Portfolio Return %** instead uses (paper equity ÷ paper starting balance − 1) × 100.
 - **AI Pattern Estimate**: Logistic-model output from closed paper trades with saved entry snapshots. The in-session training sample is small and not out-of-sample calibrated; do not treat it as a forecast.
 - **Historical Practice Replay**: One hypothetical entry on a historical candle, followed by a fixed number of candles. If a bar touches both stop and target, the simulator assumes the stop occurs first.
 - **Data Limitations**: Yahoo Finance intervals, screeners and quotes may be delayed, missing or rate-limited. Results may vary by market session and asset.
@@ -1815,6 +1952,27 @@ def render_dashboard():
                 "use the setup score as context, not as a guarantee."
             )
 
+        with st.container(border=True):
+            info_heading(
+                "↗ Real trade on Robinhood",
+                "Opens the selected asset's official Robinhood detail page. Review the ticker, order type, amount and estimated execution price inside Robinhood before submitting. This terminal does not transmit real brokerage orders or collect Robinhood credentials.",
+                4,
+            )
+            st.link_button(
+                f"Review & Buy/Sell {display_asset_name(ticker)} ({ticker}) on Robinhood ↗",
+                robinhood_asset_url(ticker),
+                use_container_width=True,
+            )
+            st.caption(
+                "This is a secure handoff to Robinhood, not an embedded order ticket. Asset availability, trading permissions and execution are determined by Robinhood. "
+                "For agent-based order placement, Robinhood requires its separate Trading MCP onboarding and dedicated MCP/Agentic account."
+            )
+            st.markdown(
+                "[Robinhood Trading MCP onboarding](https://robinhood.com/us/en/support/articles/onboarding-an-external-agent/) · "
+                "[How to review and place a stock order](https://robinhood.com/us/en/support/articles/buying-a-stock/)",
+                unsafe_allow_html=False,
+            )
+
         # ---------- DYNAMIC CHART WITH ZOOM / TOOLBAR & MARKERS ----------
         info_heading("📊 Live Price Chart", "Candles show open, high, low and close. VWAP is a volume-weighted session reference; EMA lines smooth price trends; volume bars show trading activity.", 4)
         plot_df = df.tail(90)
@@ -1866,8 +2024,18 @@ def render_dashboard():
                 name="SELL signal", hovertemplate="SELL signal<br>%{x}<br>Level: %{y:.4f}<extra></extra>"
             ), row=1, col=1)
 
-        fig.add_hline(y=sig["ideal_buy"], line_dash="dot", line_color="#10b981", annotation_text=f"Ideal Buy ${sig['ideal_buy']:,.{ticker_digits}f}", row=1, col=1)
-        fig.add_hline(y=sig["ideal_sell"], line_dash="dot", line_color="#ef4444", annotation_text=f"Ideal Sell ${sig['ideal_sell']:,.{ticker_digits}f}", row=1, col=1)
+        fig.add_hline(
+            y=price_plan["entry"], line_dash="dot", line_color="#089981",
+            annotation_text=f"{price_plan_side} Entry ${price_plan['entry']:,.{ticker_digits}f}", row=1, col=1
+        )
+        fig.add_hline(
+            y=price_plan["target"], line_dash="dot", line_color="#089981",
+            annotation_text=f"Profit Target ${price_plan['target']:,.{ticker_digits}f}", row=1, col=1
+        )
+        fig.add_hline(
+            y=price_plan["stop"], line_dash="dash", line_color="#f23645",
+            annotation_text=f"Stop Loss ${price_plan['stop']:,.{ticker_digits}f}", row=1, col=1
+        )
         fig.add_hline(y=sig["hourly_target"], line_dash="dash", line_color="#06b6d4", annotation_text=f"1H Target ${sig['hourly_target']:,.{ticker_digits}f}", row=1, col=1)
 
         bar_colors = ["#089981" if c >= o else "#f23645" for c, o in zip(plot_df["Close"], plot_df["Open"])]
@@ -1949,12 +2117,16 @@ def render_dashboard():
         total_return = ((portfolio_equity / float(st.session_state.account_size)) - 1) * 100 if st.session_state.account_size else 0.0
 
         p1, p2, p3, p4, p5 = st.columns(5)
-        p1.metric("Starting Balance", f"${st.session_state.account_size:,.2f}")
-        p2.metric("Portfolio Equity", f"${portfolio_equity:,.2f}", f"{total_return:+.2f}%")
+        p1.metric("Paper Starting Balance", f"${st.session_state.account_size:,.2f}")
+        p2.metric("Paper Portfolio Equity", f"${portfolio_equity:,.2f}", f"{total_return:+.2f}% vs start")
         p3.metric("Realized P&L", f"${realized_pnl:+,.2f}")
         p4.metric("Open P&L", f"${unrealized_pnl:+,.2f}")
         p5.metric("Open Positions", str(len(open_trades)))
-        st.caption("Portfolio equity = starting balance + closed-trade P&L + estimated open-trade P&L. Quotes may be delayed or unavailable.")
+        st.caption(
+            "Paper portfolio return = (paper equity ÷ paper starting balance − 1). "
+            "Each trade's return % below uses its own entry notional (entry price × shares/units). "
+            "Quotes may be delayed or unavailable."
+        )
 
         with st.expander("➕ Add a Paper Trade", expanded=not bool(open_trades and closed_trades)):
             st.caption("Choose LONG to practice buying first, or SHORT to practice selling first. Stop and target defaults adjust to the selected side.")
@@ -2010,7 +2182,14 @@ def render_dashboard():
                     h1.markdown(f"**{display_asset_name(trade_ticker)}**  \n`{trade_ticker}` · {trade['side']} · {float(trade['shares']):,.6f} {unit}")
                     h2.metric("Entry / Mark", f"${float(trade['entry']):,.{digits}f}", f"Mark ${live_px:,.{digits}f}")
                     h3.metric("Stop / Target", f"${float(trade['stop']):,.{digits}f}", f"Target ${float(trade['target']):,.{digits}f}")
-                    h4.metric("Unrealized P&L", f"${unrealized:+,.2f}", help="Estimated open profit/loss before closing the simulated trade.")
+                    open_return_pct = paper_trade_return_pct(unrealized, trade["entry"], trade["shares"])
+                    open_return_delta = f"{open_return_pct:+.2f}% on entry value" if open_return_pct is not None else "Return % unavailable"
+                    h4.metric(
+                        "Unrealized P&L",
+                        f"${unrealized:+,.2f}",
+                        open_return_delta,
+                        help="Estimated open profit/loss. Return % = unrealized P&L divided by entry price × shares/units; LONG and SHORT P&L are direction-adjusted."
+                    )
                     if stop_hit:
                         st.warning("The latest available price has crossed your stop level. Review the quote and close the simulation if appropriate.")
                     elif target_hit:
@@ -2042,18 +2221,26 @@ def render_dashboard():
             win_rate = (len(wins) / total_closed) * 100 if total_closed else 0
             avg_win = sum(wins) / len(wins) if wins else 0
             avg_loss = sum(losses) / len(losses) if losses else 0
-            a1, a2, a3, a4 = st.columns(4)
+            breakeven_count = total_closed - len(wins) - len(losses)
+            cdf["pnl"] = pd.to_numeric(cdf["pnl"], errors="coerce").fillna(0)
+            cdf["return_pct"] = [
+                paper_trade_return_pct(row.get("pnl", 0), row.get("entry", 0), row.get("shares", 0))
+                for row in closed_sorted
+            ]
+            valid_trade_returns = [value for value in cdf["return_pct"].tolist() if value is not None and np.isfinite(value)]
+            avg_trade_return = float(np.mean(valid_trade_returns)) if valid_trade_returns else 0.0
+            a1, a2, a3, a4, a5 = st.columns(5)
             a1.metric("Net Realized P&L", f"${sum(pnl_values):+,.2f}")
-            a2.metric("Win Rate", f"{win_rate:.1f}%", f"{len(wins)} wins · {len(losses)} losses")
+            a2.metric("Win Rate", f"{win_rate:.1f}%", f"{len(wins)} wins · {len(losses)} losses · {breakeven_count} flat")
             a3.metric("Average Winner", f"${avg_win:+,.2f}")
             a4.metric("Average Loser", f"${avg_loss:+,.2f}")
-            cdf["pnl"] = pd.to_numeric(cdf["pnl"], errors="coerce").fillna(0)
+            a5.metric("Average Trade Return", f"{avg_trade_return:+.2f}%", help="Arithmetic average of each closed trade's P&L divided by its entry notional. This is not portfolio return.")
             cdf["cumulative_pnl"] = cdf["pnl"].cumsum()
             eq = px.line(cdf, x="closed_at" if "closed_at" in cdf else "time", y="cumulative_pnl", title="Cumulative Realized P&L", markers=True)
             eq.update_layout(paper_bgcolor="#121824", plot_bgcolor="#121824", font=dict(color="#f8fafc"), height=300, margin=dict(l=10, r=10, t=45, b=10), xaxis=dict(gridcolor="#1e293b"), yaxis=dict(gridcolor="#1e293b", title="P&L ($)"))
             eq.update_traces(line_color="#10b981" if sum(pnl_values) >= 0 else "#ef4444", line_width=3)
             st.plotly_chart(eq, use_container_width=True)
-            display_cols = [c for c in ["time", "closed_at", "ticker", "side", "entry", "exit", "stop", "target", "shares", "pnl", "notes"] if c in cdf.columns]
+            display_cols = [c for c in ["time", "closed_at", "ticker", "side", "entry", "exit", "stop", "target", "shares", "pnl", "return_pct", "notes"] if c in cdf.columns]
             st.dataframe(cdf[display_cols], use_container_width=True, hide_index=True)
             csv_export = cdf.copy()
             if "ai_features" in csv_export.columns:
@@ -2100,9 +2287,13 @@ st.markdown("""
 st.markdown("---")
 render_dashboard()
 
-st.markdown("---")
-st.warning("""
-**⚠️ Educational Disclaimer**  
-This tool uses Yahoo Finance data, which may be delayed, incomplete, or unavailable. Signals and price targets are rule-based estimates, not predictions or investment advice.  
-Paper trades are simulations only; no broker orders are placed. Verify quotes and levels independently before making any real trading decision.
-""")
+st.markdown("""
+<div class="educational-disclaimer">
+  <div class="disclaimer-heading">⚠️ Educational use only</div>
+  <p><strong>Market data:</strong> Quotes and history come from Yahoo Finance and may be delayed, incomplete, adjusted, or unavailable.</p>
+  <p><strong>Signals, AI assessments and percentages:</strong> These are technical scenarios and calculations, not personalized investment advice, calibrated win probabilities, or guarantees. A target percentage describes the distance between entry and target; it does not describe the likelihood of reaching it.</p>
+  <p><strong>Paper Trading Desk:</strong> All paper positions and P&amp;L are simulated. Percent returns use entry notional for each trade; portfolio return uses the paper starting balance. Simulations do not include every real-world fee, spread, tax, borrow cost, or execution difference.</p>
+  <p><strong>Robinhood:</strong> The link above opens the selected asset on Robinhood for you to review and place an order there. This terminal does not send real orders, access your Robinhood credentials, or guarantee that an asset is tradable in your account.</p>
+  <p>Always check the current quote, order details, permissions and risks independently before making an investment decision.</p>
+</div>
+""", unsafe_allow_html=True)
