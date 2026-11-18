@@ -323,7 +323,19 @@ defaults = {
     "paper_trades": [],
     "account_size": 25000.0,
     "daily_loss_limit": 300.0,
-    "last_alert_action": None
+    "last_alert_action": None,
+    "buy_alerts_enabled": True,
+    "buy_alert_symbols": None,
+    "buy_alert_timeframe": "5m",
+    "buy_alert_frequency": 60,
+    "buy_alert_early_watch": False,
+    "buy_alert_results": [],
+    "buy_alert_events": [],
+    "buy_alert_last_signatures": {},
+    "buy_alert_future": None,
+    "buy_alert_requested_at": 0.0,
+    "buy_alert_processed_at": None,
+    "buy_alert_force_refresh": False
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -332,6 +344,8 @@ for k, v in defaults.items():
 for crypto_symbol in ["BTC-USD", "ETH-USD"]:
     if crypto_symbol not in st.session_state.watchlist:
         st.session_state.watchlist.append(crypto_symbol)
+if st.session_state.buy_alert_symbols is None:
+    st.session_state.buy_alert_symbols = list(st.session_state.watchlist)
 
 # ---------- Market Session Helper ----------
 def get_market_session():
@@ -579,6 +593,187 @@ def get_higher_tf_bias(ticker, prepost, trend_interval="15m"):
     except Exception:
         return "Unavailable"
 
+
+def classify_buy_alert_signal(sig):
+    """Classify a signal as confirmed BUY, developing bullish watch, or wait."""
+    long_score = int(sig.get("long_score", 0))
+    short_score = int(sig.get("short_score", 0))
+    action = str(sig.get("action", ""))
+    if action.startswith("🚀 BUY NOW") and long_score >= 4 and long_score > short_score:
+        return "BUY ALERT"
+    if long_score >= 3 and long_score > short_score:
+        return "BULLISH WATCH"
+    return "WAIT"
+
+
+def scan_selected_buy_alerts(symbols, alert_interval="5m", prepost=False, rr_ratio=1.8):
+    """Evaluate user-selected watchlist symbols for confirmed or developing long setups."""
+    rows = []
+    for symbol in list(dict.fromkeys(str(x).upper().strip() for x in symbols if str(x).strip())):
+        try:
+            raw = get_intraday_data(symbol, alert_interval, prepost=prepost)
+            if raw is None or raw.empty or len(raw) < 30:
+                rows.append({"Symbol": symbol, "Asset Name": display_asset_name(symbol), "Status": "NO DATA"})
+                continue
+            enriched = add_indicators(raw)
+            daily = get_daily_stats(symbol)
+            quote = get_fast_quote(symbol)
+            sig = compute_price_targets_and_signal(enriched, quote, daily, alert_interval, rr_ratio)
+            rows.append({
+                "Symbol": symbol,
+                "Asset Name": display_asset_name(symbol),
+                "Status": classify_buy_alert_signal(sig),
+                "Price": float(sig["price"]),
+                "Long Score": int(sig["long_score"]),
+                "Short Score": int(sig["short_score"]),
+                "Entry": float(sig["ideal_buy"]),
+                "Stop": float(sig["stop"]),
+                "Target": float(sig["ideal_sell"]),
+                "RSI": float(sig["rsi"]),
+                "Reason": str(sig["action"]),
+            })
+        except Exception as exc:
+            rows.append({"Symbol": symbol, "Asset Name": display_asset_name(symbol), "Status": "UNAVAILABLE", "Reason": str(exc)[:100]})
+    return rows
+
+
+@st.cache_resource
+def get_buy_alert_executor():
+    """A dedicated worker keeps selected-symbol alert checks off the main UI thread."""
+    return ThreadPoolExecutor(max_workers=1, thread_name_prefix="selected-buy-alerts")
+
+
+@st.fragment(run_every=15)
+def render_buy_alert_monitor():
+    """Poll selected symbols and notify once when a new bullish signal appears."""
+    info_heading(
+        "🔔 Buy Alerts for Selected Stocks",
+        "Monitors your selected watchlist symbols and the currently loaded asset. A BUY ALERT means the app's bullish checklist is aligned; a bullish watch is an early setup, not a confirmed entry. Alerts only run while this app is open.",
+        3,
+    )
+    if not st.session_state.get("buy_alerts_enabled", True):
+        st.caption("Buy alerts are paused. Turn them on in the sidebar under Buy Alert Settings.")
+        return
+
+    selected = list(st.session_state.get("buy_alert_symbols") or [])
+    active = st.session_state.get("active_ticker")
+    symbols = list(dict.fromkeys(selected + ([active] if active else [])))
+    if not symbols:
+        st.info("Select at least one stock or crypto asset in the sidebar to monitor for buy alerts.")
+        return
+
+    if st.button("↻ Check selected stocks now", key="force_selected_buy_alert_scan"):
+        st.session_state.buy_alert_force_refresh = True
+
+    future = st.session_state.get("buy_alert_future")
+    requested_at = float(st.session_state.get("buy_alert_requested_at") or 0.0)
+    now_ts = datetime.now().timestamp()
+    scan_frequency = int(st.session_state.get("buy_alert_frequency", 60))
+    force = bool(st.session_state.pop("buy_alert_force_refresh", False))
+
+    if future is None or (future.done() and (force or now_ts - requested_at >= scan_frequency)):
+        future = get_buy_alert_executor().submit(
+            scan_selected_buy_alerts,
+            tuple(symbols),
+            st.session_state.get("buy_alert_timeframe", "5m"),
+            True,
+            float(st.session_state.get("alert_rr_ratio", 1.8)),
+        )
+        requested_at = now_ts
+        st.session_state.buy_alert_future = future
+        st.session_state.buy_alert_requested_at = requested_at
+        st.session_state.buy_alert_processed_at = None
+    elif force and future is not None and not future.done():
+        st.caption("A selected-stock alert scan is already running; its results will appear when it finishes.")
+
+    if future is None:
+        st.caption("Starting selected-stock alert monitor…")
+        return
+    if not future.done():
+        st.caption(f"Checking {len(symbols)} selected assets · refresh about every {scan_frequency} seconds…")
+        previous_rows = st.session_state.get("buy_alert_results", [])
+        if not previous_rows:
+            return
+
+    if future.done() and st.session_state.get("buy_alert_processed_at") != requested_at:
+        try:
+            results = future.result()
+            st.session_state.buy_alert_results = results
+            signatures = dict(st.session_state.get("buy_alert_last_signatures", {}))
+            events = list(st.session_state.get("buy_alert_events", []))
+            notify_early = bool(st.session_state.get("buy_alert_early_watch", False))
+            new_events = []
+            for row in results:
+                symbol = row.get("Symbol")
+                status = row.get("Status", "WAIT")
+                should_notify = status == "BUY ALERT" or (notify_early and status == "BULLISH WATCH")
+                signature = status if should_notify else None
+                if should_notify and signatures.get(symbol) != signature:
+                    event = {
+                        "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %I:%M:%S %p ET"),
+                        "Symbol": symbol,
+                        "Asset Name": row.get("Asset Name", symbol),
+                        "Status": status,
+                        "Price": row.get("Price"),
+                        "Long Score": row.get("Long Score"),
+                        "Entry": row.get("Entry"),
+                        "Stop": row.get("Stop"),
+                        "Target": row.get("Target"),
+                    }
+                    events.insert(0, event)
+                    new_events.append(event)
+                signatures[symbol] = signature
+            st.session_state.buy_alert_last_signatures = signatures
+            st.session_state.buy_alert_events = events[:30]
+            st.session_state.buy_alert_processed_at = requested_at
+            for event in new_events[:3]:
+                if event["Status"] == "BUY ALERT":
+                    st.toast(
+                        f"BUY ALERT · {event['Asset Name']} ({event['Symbol']}) · ${float(event['Price']):,.{price_decimals(event['Price'])}f} · score {event['Long Score']}/5",
+                        icon="🚀",
+                    )
+                else:
+                    st.toast(f"Bullish watch · {event['Asset Name']} ({event['Symbol']}) · wait for confirmation", icon="👀")
+        except Exception as exc:
+            st.session_state.buy_alert_error = str(exc)
+            st.session_state.buy_alert_processed_at = requested_at
+
+    results = st.session_state.get("buy_alert_results", [])
+    if results:
+        strong = [row for row in results if row.get("Status") == "BUY ALERT"]
+        developing = [row for row in results if row.get("Status") == "BULLISH WATCH"]
+        if strong:
+            st.success(f"🚀 {len(strong)} confirmed BUY setup(s): " + ", ".join(f"{r['Asset Name']} ({r['Symbol']})" for r in strong))
+        elif developing:
+            st.info(f"👀 {len(developing)} bullish setup(s) developing. Wait for full confirmation before treating them as a buy signal.")
+        else:
+            st.caption("No confirmed BUY setup among the selected assets on the latest scan.")
+
+        display_rows = []
+        for row in results:
+            price_value = row.get("Price")
+            digits = price_decimals(price_value) if price_value and np.isfinite(float(price_value)) else 2
+            display_rows.append({
+                "Asset": row.get("Asset Name", row.get("Symbol", "—")),
+                "Ticker": row.get("Symbol", "—"),
+                "Alert": row.get("Status", "—"),
+                "Price": f"${float(price_value):,.{digits}f}" if price_value is not None else "—",
+                "Score": f"{row.get('Long Score', '—')}/5" if row.get("Long Score") is not None else "—",
+                "Entry Area": f"${float(row['Entry']):,.{digits}f}" if row.get("Entry") is not None else "—",
+                "Stop": f"${float(row['Stop']):,.{digits}f}" if row.get("Stop") is not None else "—",
+                "Target": f"${float(row['Target']):,.{digits}f}" if row.get("Target") is not None else "—",
+            })
+        st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
+    else:
+        st.caption("No scan results yet. The first selected-stock scan is running in the background.")
+
+    events = st.session_state.get("buy_alert_events", [])
+    if events:
+        with st.expander(f"📣 Recent Buy Alerts ({len(events)})", expanded=False):
+            st.dataframe(pd.DataFrame(events), use_container_width=True, hide_index=True)
+    if st.session_state.get("buy_alert_error"):
+        st.caption("The latest alert scan had a temporary data issue. Check ticker symbols or try again.")
+
 # ---------- ALWAYS-REFRESHING MARKET CANDIDATES ----------
 @st.cache_resource
 def get_market_scan_executor():
@@ -752,6 +947,30 @@ with st.sidebar:
             st.rerun()
 
     st.markdown("---")
+    info_heading("🔔 Buy Alert Settings", "Choose which stocks or crypto assets to monitor. A confirmed alert requires the app's strong bullish signal. Optional early alerts are labelled as developing, not as a buy confirmation.", 3)
+    st.checkbox("Enable selected-stock buy alerts", key="buy_alerts_enabled", help="Shows in-app alerts while this terminal is open. This does not send SMS, email, or broker notifications.")
+    alert_options = list(dict.fromkeys(st.session_state.watchlist + [st.session_state.active_ticker]))
+    alert_defaults = [sym for sym in (st.session_state.get("buy_alert_symbols") or []) if sym in alert_options]
+    selected_alert_symbols = st.multiselect(
+        "Monitor these selected assets",
+        options=alert_options,
+        default=alert_defaults,
+        format_func=lambda sym: f"{display_asset_name(sym)} ({sym})",
+        key="buy_alert_symbols_picker",
+        help="Choose the watchlist stocks and crypto you want checked for a bullish entry setup. The currently loaded asset is also checked automatically.",
+    )
+    st.session_state.buy_alert_symbols = selected_alert_symbols
+    st.selectbox("Alert timeframe", ["1m", "2m", "5m", "15m"], index=2, key="buy_alert_timeframe", help="Timeframe used to evaluate alert signals. Shorter timeframes can be noisier.")
+    st.selectbox(
+        "Alert scan frequency",
+        options=[30, 60, 120, 300],
+        index=1,
+        format_func=lambda value: {30: "Every 30 seconds", 60: "Every 1 minute", 120: "Every 2 minutes", 300: "Every 5 minutes"}[value],
+        key="buy_alert_frequency",
+    )
+    st.checkbox("Also notify me about early bullish setups", key="buy_alert_early_watch", value=False, help="Adds a separate WATCH alert when 3/5 bullish checks are present. It is not a confirmed BUY signal.")
+
+    st.markdown("---")
     info_heading("📈 Chart & Risk Controls", "Set the chart display, confirmation timeframe, position sizing assumptions and account risk limits.", 3)
     chart_type = st.selectbox("Chart Style", ["Candlestick", "Line Chart"], index=0,
                               help="Candlesticks show open, high, low and close. Line charts connect closing prices.")
@@ -802,11 +1021,6 @@ def render_dashboard():
 
         price = sig["price"]
         
-        if "BUY NOW" in sig["action"] or "SHORT" in sig["action"]:
-            if st.session_state.last_alert_action != sig["action"]:
-                st.toast(f"🚨 ALERT: {sig['action']} on {ticker} @ ${price:,.{price_decimals(price)}f}!", icon="⚡")
-                st.session_state.last_alert_action = sig["action"]
-
         last_bar_time = df.index[-1]
         try:
             age_sec = int((datetime.now(last_bar_time.tzinfo) - last_bar_time).total_seconds())
@@ -1300,6 +1514,8 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+st.markdown("---")
+render_buy_alert_monitor()
 st.markdown("---")
 render_dashboard()
 
