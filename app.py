@@ -101,6 +101,195 @@ div[data-testid="stAlert"] { border-radius: 10px; }
   .terminal-hero { padding:.85rem; }
   div[data-testid="stMetric"] { padding:10px; }
 }
+
+/* ---------- Global contrast and persistent button-state accessibility ---------- */
+:root {
+  color-scheme: dark;
+  --terminal-text-strong: #f5f8ff;
+  --terminal-text: #e4edf8;
+  --terminal-text-muted: #b4c2d3;
+  --terminal-input-bg: #0b1422;
+  --terminal-button-bg: #1a2b40;
+  --terminal-button-hover: #25415f;
+  --terminal-button-active: #315776;
+  --terminal-button-border: #58718d;
+}
+html, body, .stApp, [data-testid="stAppViewContainer"],
+[data-testid="stMain"], [data-testid="stMainBlockContainer"] {
+  color: var(--terminal-text) !important;
+}
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li,
+[data-testid="stMarkdownContainer"] blockquote,
+[data-testid="stCaptionContainer"],
+[data-testid="stHelp"] p,
+.stText, .stMarkdown, label, legend {
+  color: var(--terminal-text) !important;
+}
+[data-testid="stCaptionContainer"], .stCaption,
+small, .muted, [data-testid="stWidgetLabel"] p {
+  color: var(--terminal-text-muted) !important;
+}
+h1, h2, h3, h4, h5, h6,
+[data-testid="stMarkdownContainer"] strong,
+[data-testid="stMarkdownContainer"] b {
+  color: var(--terminal-text-strong) !important;
+}
+/* Sidebar: ensure widget labels and helper copy remain legible. */
+section[data-testid="stSidebar"],
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+section[data-testid="stSidebar"] [data-testid="stWidgetLabel"],
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+  color: var(--terminal-text) !important;
+}
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+  color: var(--terminal-text-muted) !important;
+}
+/* Inputs, selected values, placeholders and dropdown menus. */
+.stTextInput input, .stNumberInput input, .stTextArea textarea,
+[data-baseweb="input"] input, [data-baseweb="textarea"] textarea,
+[data-baseweb="select"] > div, [data-baseweb="select"] input {
+  background-color: var(--terminal-input-bg) !important;
+  color: var(--terminal-text-strong) !important;
+  -webkit-text-fill-color: var(--terminal-text-strong) !important;
+  border-color: #526982 !important;
+}
+input::placeholder, textarea::placeholder {
+  color: #aebed0 !important;
+  -webkit-text-fill-color: #aebed0 !important;
+  opacity: 1 !important;
+}
+[data-baseweb="popover"], [data-baseweb="menu"],
+[data-baseweb="popover"] *, [data-baseweb="menu"] *,
+[role="listbox"], [role="option"] {
+  background-color: #101c2b;
+  color: #f0f5fc !important;
+}
+[role="option"]:hover, [role="option"][aria-selected="true"] {
+  background-color: #244563 !important;
+  color: #ffffff !important;
+}
+/* All buttons retain readable contrast in default, hover, focus, pressed and disabled states. */
+.stButton > button, .stDownloadButton > button,
+[data-testid="stFormSubmitButton"] > button,
+[data-testid^="stBaseButton-"] {
+  color: #f5f8ff !important;
+  -webkit-text-fill-color: #f5f8ff !important;
+  background: linear-gradient(145deg, #1b3048, #142438) !important;
+  border: 1px solid var(--terminal-button-border) !important;
+  border-radius: 9px !important;
+  font-weight: 700 !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,.18) !important;
+  transition: background .14s ease, border-color .14s ease, box-shadow .14s ease !important;
+}
+.stButton > button:hover, .stDownloadButton > button:hover,
+[data-testid="stFormSubmitButton"] > button:hover,
+[data-testid^="stBaseButton-"]:hover {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  background: linear-gradient(145deg, #285276, #1b3d5c) !important;
+  border-color: #8bc9f2 !important;
+  box-shadow: 0 0 0 1px rgba(139,201,242,.18), 0 5px 14px rgba(0,0,0,.24) !important;
+}
+.stButton > button:focus, .stButton > button:focus-visible,
+.stDownloadButton > button:focus, .stDownloadButton > button:focus-visible,
+[data-testid="stFormSubmitButton"] > button:focus-visible,
+[data-testid^="stBaseButton-"]:focus-visible {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  outline: 3px solid #8bd5ff !important;
+  outline-offset: 2px !important;
+  border-color: #a8e0ff !important;
+}
+.stButton > button:active, .stDownloadButton > button:active,
+[data-testid="stFormSubmitButton"] > button:active,
+[data-testid^="stBaseButton-"]:active,
+.stButton > button[aria-pressed="true"] {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  background: #315776 !important;
+  border-color: #a1d9ff !important;
+  box-shadow: inset 0 2px 5px rgba(0,0,0,.28) !important;
+  transform: none !important;
+}
+.stButton > button:disabled, .stDownloadButton > button:disabled,
+[data-testid="stFormSubmitButton"] > button:disabled,
+[data-testid^="stBaseButton-"]:disabled {
+  color: #c6d1df !important;
+  -webkit-text-fill-color: #c6d1df !important;
+  background: #263548 !important;
+  border-color: #52647a !important;
+  opacity: 1 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+/* Primary actions stay blue and visibly labelled after clicking. */
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="stBaseButton-primary"],
+[data-testid="stBaseButton-primary"],
+[data-testid="stFormSubmitButton"] > button[kind="primary"] {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  background: linear-gradient(135deg, #087cae, #155e9a) !important;
+  border-color: #55b9e8 !important;
+}
+.stButton > button[kind="primary"]:hover,
+[data-testid="stBaseButton-primary"]:hover {
+  background: linear-gradient(135deg, #1098cb, #1976b8) !important;
+  border-color: #a3e4ff !important;
+}
+.stButton > button[kind="primary"]:active,
+.stButton > button[kind="primary"]:focus,
+[data-testid="stBaseButton-primary"]:active,
+[data-testid="stBaseButton-primary"]:focus {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  background: #176b9b !important;
+  border-color: #b5e8ff !important;
+}
+section[data-testid="stSidebar"] .stButton > button {
+  color: #f5f8ff !important;
+  -webkit-text-fill-color: #f5f8ff !important;
+}
+/* Radio, checkbox, tabs and segmented controls: selected text stays high contrast. */
+[data-testid="stRadio"] label, [data-testid="stCheckbox"] label,
+[data-testid="stToggle"] label, [role="radiogroup"] label,
+[data-baseweb="tab"] p, [data-baseweb="tab"] span,
+[role="tab"] {
+  color: #eaf2fc !important;
+}
+[role="tab"][aria-selected="true"], [data-baseweb="tab-highlight"] {
+  color: #ffffff !important;
+  border-color: #55b9e8 !important;
+}
+[data-testid="stAlert"] *, [data-testid="stNotification"] *,
+[data-testid="stToast"] *, [data-testid="stStatusWidget"] * {
+  color: inherit;
+}
+[data-testid="stAlert"] { color: #f3f7fc !important; }
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] [data-testid="stMarkdownContainer"] {
+  color: #eaf2fc !important;
+}
+/* Data editors and dataframe headers use explicit light text on dark cells. */
+[data-testid="stDataFrame"], [data-testid="stDataEditor"] {
+  color: #f0f5fc !important;
+  border-color: #465b73 !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricLabel"] {
+  color: #bdcad9 !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+  color: #ffffff !important;
+}
+/* Custom hover help is readable and remains above neighbouring panels. */
+.info-tip[title]:hover::after {
+  background: #101c2b !important;
+  color: #f5f8ff !important;
+  border-color: #79bfe8 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
