@@ -557,6 +557,123 @@ section[data-testid="stSidebar"] p {
   [data-testid="stMetric"] { min-height: 88px !important; }
 }
 
+/* Robinhood handoff: a real link button must be readable before hover or click. */
+[data-testid="stLinkButton"] { width: 100% !important; }
+[data-testid="stLinkButton"] > a,
+[data-testid="stLinkButton"] a[role="button"],
+.stLinkButton a {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 48px !important;
+  padding: .65rem 1rem !important;
+  background: #2962ff !important;
+  border: 1px solid #5d86ff !important;
+  border-radius: 7px !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
+  text-decoration: none !important;
+  opacity: 1 !important;
+  box-shadow: 0 2px 8px rgba(41,98,255,.18) !important;
+}
+[data-testid="stLinkButton"] > a *,
+[data-testid="stLinkButton"] a[role="button"] *,
+.stLinkButton a * {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+}
+[data-testid="stLinkButton"] > a:hover,
+[data-testid="stLinkButton"] a[role="button"]:hover,
+.stLinkButton a:hover {
+  background: #1f53e5 !important;
+  border-color: #86a5ff !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  transform: translateY(-1px);
+}
+[data-testid="stLinkButton"] > a:focus,
+[data-testid="stLinkButton"] > a:focus-visible,
+[data-testid="stLinkButton"] a[role="button"]:focus-visible,
+.stLinkButton a:focus-visible {
+  outline: 2px solid #a9c0ff !important;
+  outline-offset: 3px !important;
+  background: #1f53e5 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+[data-testid="stLinkButton"] > a:active,
+[data-testid="stLinkButton"] a[role="button"]:active,
+.stLinkButton a:active {
+  background: #1947c7 !important;
+  border-color: #a9c0ff !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  transform: none !important;
+}
+
+/* Paper desk empty state uses the same quiet bordered panel language as the dashboard. */
+.paper-empty-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: .7rem 0 1rem;
+  padding: 18px 20px;
+  background: #1e222d !important;
+  border: 1px solid #3a4050 !important;
+  border-left: 3px solid #6f9df5 !important;
+  border-radius: 8px !important;
+  color: #e0e5ee !important;
+  -webkit-text-fill-color: #e0e5ee !important;
+}
+.paper-empty-state * {
+  background: transparent !important;
+  color: #e0e5ee !important;
+  -webkit-text-fill-color: #e0e5ee !important;
+}
+.paper-empty-icon { font-size: 25px; line-height: 1.25; flex: 0 0 auto; }
+.paper-empty-title { color: #f0f3fa !important; -webkit-text-fill-color: #f0f3fa !important; font-size: 17px; font-weight: 700; margin-bottom: 3px; }
+.paper-empty-copy { color: #b8c2d1 !important; -webkit-text-fill-color: #b8c2d1 !important; font-size: 15px; line-height: 1.5; }
+
+/* Real trading handoff panel: visually distinct from the simulated trading desk. */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.robinhood-panel-marker) {
+  background: linear-gradient(145deg, #202a3b 0%, #1b2230 100%) !important;
+  border: 1px solid #465875 !important;
+  border-radius: 10px !important;
+  padding: 12px !important;
+  box-shadow: 0 5px 18px rgba(0,0,0,.16) !important;
+}
+.robinhood-panel-marker { display: none !important; }
+.robinhood-handoff-kicker {
+  display: inline-block;
+  margin: 0 0 7px;
+  padding: 4px 8px;
+  border: 1px solid #52698e;
+  border-radius: 4px;
+  background: #273752 !important;
+  color: #b9ccf4 !important;
+  -webkit-text-fill-color: #b9ccf4 !important;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+.robinhood-handoff-copy {
+  margin: 3px 0 9px;
+  color: #bdc8d9 !important;
+  -webkit-text-fill-color: #bdc8d9 !important;
+  font-size: 14px;
+  line-height: 1.5;
+}
+@media (max-width: 700px) {
+  .paper-empty-state { padding: 14px; gap: 10px; }
+  [data-testid="stVerticalBlockBorderWrapper"]:has(.robinhood-panel-marker) { padding: 9px !important; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -574,6 +691,18 @@ def render_terminal_notice(message, kind="info"):
     safe_kind = kind if kind in {"info", "learning", "position"} else "info"
     st.markdown(
         f'<div class="terminal-notice terminal-notice-{safe_kind}" role="status">{safe_message}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_paper_empty_state():
+    """Show a readable, bordered empty state when the paper desk has no trades."""
+    st.markdown(
+        '<div class="paper-empty-state" role="status">'
+        '<div class="paper-empty-icon" aria-hidden="true">▤</div>'
+        '<div><div class="paper-empty-title">Your paper-trading desk is ready</div>'
+        '<div class="paper-empty-copy">Add a simulated trade above to start tracking positions and performance.</div></div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
@@ -2174,6 +2303,12 @@ def render_dashboard():
             )
 
         with st.container(border=True):
+            st.markdown(
+                '<div class="robinhood-panel-marker"></div>'
+                '<div class="robinhood-handoff-kicker">REAL-MARKET ORDER HANDOFF</div>'
+                '<div class="robinhood-handoff-copy">Continue to Robinhood to review the selected asset and complete any real order there. This area is separate from simulated paper trading.</div>',
+                unsafe_allow_html=True,
+            )
             info_heading(
                 "↗ Real trade on Robinhood",
                 "Opens the selected asset's official Robinhood detail page. Review the ticker, order type, amount and estimated execution price inside Robinhood before submitting. This terminal does not transmit real brokerage orders or collect Robinhood credentials.",
@@ -2474,7 +2609,7 @@ def render_dashboard():
             st.download_button("📥 Export Paper Journal (CSV)", csv_buffer.getvalue(), file_name=f"paper_trading_journal_{date.today()}.csv", mime="text/csv", key="export_paper_journal")
 
         if not normalized_records:
-            st.info("Your paper-trading desk is ready. Add a simulated trade above to start tracking positions and performance.")
+            render_paper_empty_state()
         elif not open_trades and not closed_trades:
             st.info("No active or closed paper positions yet.")
 
