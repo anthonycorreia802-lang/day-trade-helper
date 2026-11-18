@@ -437,6 +437,205 @@ def predict_adaptive_model(model, features):
     except (KeyError, TypeError, ValueError, FloatingPointError):
         return None
 
+def build_reward_assessment(signal, adaptive_model=None, trend_bias="Unavailable", rr_ratio=1.8):
+    """Explain selected-asset reward scenarios without inventing a calibrated win probability."""
+    long_score = int(signal.get("long_score", 0))
+    short_score = int(signal.get("short_score", 0))
+    if long_score == short_score:
+        return {
+            "side": "MIXED", "score": max(long_score, short_score),
+            "label": "No clear directional edge", "plan": None,
+            "potential_reward_pct": None, "risk_pct": None,
+            "reward_to_risk": None, "pattern_estimate": None,
+            "reasons": [
+                "Bullish and bearish checks are tied, so the model does not favor either direction.",
+                "Wait for price, moving averages and momentum to align before treating either target as a meaningful scenario.",
+            ],
+        }
+
+    side = "LONG" if long_score > short_score else "SHORT"
+    score = long_score if side == "LONG" else short_score
+    is_long = side == "LONG"
+    price = float(signal.get("price", 0.0))
+    digits = price_decimals(price)
+    stop_gap = max(float(signal.get("stop_dist", 0.0)), price * 0.0025, 0.000001)
+    plan = build_quick_trade_plan(signal, price, stop_gap, rr_ratio, side, digits)
+
+    above_vwap = bool(signal.get("above_vwap", float(signal.get("vwap_gap_pct", 0.0)) > 0))
+    ema_bullish = bool(signal.get("ema_bullish", float(signal.get("ema_spread_pct", 0.0)) > 0))
+    price_above_ema9 = bool(signal.get("price_above_ema9", True))
+    volume_ratio = float(signal.get("volume_ratio", 1.0))
+    rsi = float(signal.get("rsi", 50.0))
+    volume_ok = volume_ratio >= 0.85
+    momentum_ok = (40 < rsi < 70) if is_long else (30 < rsi < 60)
+    trend_text = str(trend_bias or "Unavailable").lower()
+    trend_matches = ("bullish" in trend_text or "up" in trend_text) if is_long else ("bearish" in trend_text or "down" in trend_text)
+
+    checks = [
+        ("Price versus VWAP", above_vwap if is_long else not above_vwap,
+         "Price is above VWAP, supporting buyers." if is_long else "Price is below VWAP, supporting sellers.",
+         "Price is below VWAP, weakening the long case." if is_long else "Price is above VWAP, weakening the short case."),
+        ("EMA 9 / EMA 20 trend", ema_bullish if is_long else not ema_bullish,
+         "EMA 9 is above EMA 20, showing an upward short-term trend." if is_long else "EMA 9 is below EMA 20, showing a downward short-term trend.",
+         "EMA 9 / EMA 20 are not aligned with this direction."),
+        ("Price confirmation", price_above_ema9 if is_long else not price_above_ema9,
+         "Price is on the supportive side of EMA 9." if is_long else "Price is below EMA 9, supporting the short scenario.",
+         "Price has not confirmed this direction around EMA 9."),
+        ("Volume confirmation", volume_ok,
+         f"Volume is {volume_ratio:.2f}× its recent average, meeting the activity check.",
+         f"Volume is {volume_ratio:.2f}× its recent average, below the confirmation threshold."),
+        ("RSI momentum", momentum_ok,
+         f"RSI is {rsi:.1f}, inside the preferred momentum range for this side.",
+         f"RSI is {rsi:.1f}, outside the preferred momentum range for this side."),
+    ]
+    reasons = [f"{'✓' if passed else '!' } {name}: {good if passed else caution}" for name, passed, good, caution in checks]
+    if trend_bias and trend_bias != "Unavailable" and trend_bias != "Not enough data":
+        reasons.append(
+            f"{'✓' if trend_matches else '!'} Higher timeframe: {trend_bias}; "
+            + ("it agrees with this setup." if trend_matches else "it does not confirm this direction.")
+        )
+    label = "Strong technical confluence" if score >= 4 and trend_matches else (
+        "Developing setup" if score >= 3 else "Weak / wait for confirmation"
+    )
+    entry = float(plan["entry"])
+    stop = float(plan["stop"])
+    target = float(plan["target"])
+    potential_reward_pct = abs(target - entry) / max(entry, 0.000001) * 100
+    risk_pct = abs(entry - stop) / max(entry, 0.000001) * 100
+    pattern_estimate = predict_adaptive_model(
+        adaptive_model, directional_learning_features(signal, side)
+    ) if adaptive_model else None
+    return {
+        "side": side, "score": score, "label": label, "plan": plan,
+        "potential_reward_pct": potential_reward_pct, "risk_pct": risk_pct,
+        "reward_to_risk": potential_reward_pct / max(risk_pct, 0.000001),
+        "pattern_estimate": pattern_estimate, "trend_matches": trend_matches,
+        "reasons": reasons,
+    }
+
+
+def simulate_historical_practice(df, side="LONG", bars_back=20, horizon=10, rr_ratio=2.0, atr_multiple=1.0):
+    """Replay one educational trade on historical candles; resolve same-candle ties conservatively."""
+    side = str(side).upper()
+    if side not in {"LONG", "SHORT"}:
+        raise ValueError("side must be LONG or SHORT")
+    if df is None or df.empty or not {"Open", "High", "Low", "Close", "ATR"}.issubset(df.columns):
+        raise ValueError("Historical candles with OHLC and ATR data are required.")
+    bars_back, horizon = int(bars_back), int(horizon)
+    if horizon < 1 or bars_back < horizon or bars_back >= len(df):
+        raise ValueError("Choose a historical starting candle with enough future candles to replay.")
+    start_index = len(df) - 1 - bars_back
+    start = df.iloc[start_index]
+    future = df.iloc[start_index + 1:start_index + 1 + horizon]
+    if len(future) < horizon:
+        raise ValueError("Not enough future candles for the selected replay window.")
+    entry = float(start["Close"])
+    atr = float(start["ATR"])
+    if not np.isfinite(entry) or entry <= 0 or not np.isfinite(atr) or atr <= 0:
+        raise ValueError("The selected historical entry candle has invalid price or volatility data.")
+    risk_distance = max(atr * float(atr_multiple), entry * 0.0025)
+    if side == "LONG":
+        stop, target = entry - risk_distance, entry + risk_distance * float(rr_ratio)
+    else:
+        stop, target = entry + risk_distance, max(0.000001, entry - risk_distance * float(rr_ratio))
+    exit_price, outcome, exit_time, note = float(future["Close"].iloc[-1]), "TIME EXIT", future.index[-1], "Neither stop nor target was reached within the replay window."
+    for timestamp, candle in future.iterrows():
+        if side == "LONG":
+            stop_hit, target_hit = float(candle["Low"]) <= stop, float(candle["High"]) >= target
+        else:
+            stop_hit, target_hit = float(candle["High"]) >= stop, float(candle["Low"]) <= target
+        if stop_hit and target_hit:
+            exit_price, outcome, exit_time = stop, "STOP LOSS", timestamp
+            note = "Both levels appeared inside one candle; the replay assumes the stop was hit first (conservative assumption)."
+            break
+        if stop_hit:
+            exit_price, outcome, exit_time, note = stop, "STOP LOSS", timestamp, "The stop level was touched before the target in the replay."
+            break
+        if target_hit:
+            exit_price, outcome, exit_time, note = target, "TAKE PROFIT", timestamp, "The target level was reached inside the replay window."
+            break
+    pnl_per_unit = (exit_price - entry) if side == "LONG" else (entry - exit_price)
+    return {
+        "side": side, "entry": entry, "stop": stop, "target": target,
+        "exit": float(exit_price), "outcome": outcome, "pnl_pct": pnl_per_unit / entry * 100,
+        "r_multiple": pnl_per_unit / risk_distance, "start_time": str(start.name),
+        "exit_time": str(exit_time), "bars_checked": len(future), "note": note,
+    }
+
+
+BEGINNER_TRADING_QUIZ = (
+    {"question": "What does VWAP compare?", "options": ["Price weighted by trading volume", "The highest price of the day", "A company's yearly profit", "The number of shares available"], "answer": "Price weighted by trading volume", "why": "VWAP is the average traded price weighted by volume. Traders compare current price with it for session context."},
+    {"question": "What is a stop loss for?", "options": ["To plan an exit if price moves against the trade", "To guarantee a profit", "To increase the position size", "To predict tomorrow's closing price"], "answer": "To plan an exit if price moves against the trade", "why": "A stop defines where the plan is considered invalid and the simulated position should be closed. Real fills can differ."},
+    {"question": "What can RSI above 70 suggest?", "options": ["Strong or overextended upward momentum", "A guaranteed price drop", "The stock is undervalued", "Trading volume is zero"], "answer": "Strong or overextended upward momentum", "why": "RSI above 70 is commonly called overbought, but strong trends can remain elevated and it does not guarantee a reversal."},
+    {"question": "When EMA 9 is above EMA 20, what does that usually indicate?", "options": ["Short-term upward trend pressure", "A guaranteed buy signal", "A lower trading volume", "A confirmed company dividend"], "answer": "Short-term upward trend pressure", "why": "The faster EMA is above the slower EMA, which can indicate upward momentum; it is not enough on its own to confirm a trade."},
+    {"question": "A 2:1 reward-to-risk plan means what?", "options": ["The target is twice as far from entry as the stop", "The stop is twice as far as the target", "Two trades must be opened", "The trade has a 2% chance of loss"], "answer": "The target is twice as far from entry as the stop", "why": "A 2:1 plan targets two units of potential reward for each one unit of planned risk. It does not imply a 2-in-1 win probability."},
+    {"question": "Why calculate position size before a trade?", "options": ["To keep the planned loss within a risk budget", "To guarantee the target is reached", "To remove market volatility", "To make every trade profitable"], "answer": "To keep the planned loss within a risk budget", "why": "Position size links quantity to the distance between entry and stop, helping keep the planned loss within the chosen risk amount."},
+)
+
+
+def render_beginner_quiz():
+    """Render a short, objective trading-basics quiz with immediate explanations."""
+    with st.expander("🧠 Beginner Knowledge Quiz", expanded=False):
+        total = len(BEGINNER_TRADING_QUIZ)
+        index = int(st.session_state.get("beginner_quiz_index", 0))
+        results = st.session_state.setdefault("beginner_quiz_results", {})
+        if index >= total:
+            score = sum(bool(item.get("correct")) for item in results.values())
+            st.success(f"Quiz complete: {score} / {total} correct.")
+            st.caption("Review the explanations above in the Beginner's Guide, then try again to improve your score.")
+            if st.button("Restart beginner quiz", key="beginner_quiz_restart"):
+                st.session_state.beginner_quiz_index = 0
+                st.session_state.beginner_quiz_results = {}
+                st.rerun()
+            return
+        item = BEGINNER_TRADING_QUIZ[index]
+        st.progress((index + 1) / total, text=f"Question {index + 1} of {total}")
+        st.markdown(f"**{item['question']}**")
+        chosen = st.radio("Choose one answer", item["options"], key=f"beginner_quiz_answer_{index}", label_visibility="collapsed")
+        result = results.get(str(index))
+        if result is None and st.button("Check answer", key=f"beginner_quiz_check_{index}", type="primary"):
+            result = {"correct": chosen == item["answer"], "chosen": chosen}
+            results[str(index)] = result
+        if result is not None:
+            if result["correct"]:
+                st.success("That's right. " + item["why"])
+            else:
+                st.info(f"Good practice. Correct answer: **{item['answer']}**. {item['why']}")
+            if st.button("Next question", key=f"beginner_quiz_next_{index}"):
+                st.session_state.beginner_quiz_index = index + 1
+                st.rerun()
+
+
+def render_historical_practice_simulator(df, ticker, rr_ratio=1.8):
+    """Offer a one-trade historical replay using only candles already loaded for the selected asset."""
+    with st.expander("🎮 Practice Trade Simulator", expanded=False):
+        max_back = min(120, len(df) - 2) if df is not None else 0
+        if max_back < 6:
+            st.info("Load more historical candles or choose a longer chart timeframe to use the simulator.")
+            return
+        horizon_options = [n for n in [5, 10, 15, 20] if n <= max_back]
+        horizon = st.selectbox("How many future candles should the simulation replay?", horizon_options, index=min(1, len(horizon_options)-1), key=f"practice_horizon_{ticker}")
+        max_back = min(120, len(df) - 2)
+        default_back = min(max_back, max(horizon + 5, 20))
+        bars_back = st.slider("Choose a past entry point (candles before latest)", min_value=horizon, max_value=max_back, value=default_back, key=f"practice_bars_back_{ticker}")
+        side = st.radio("Practice direction", ["LONG", "SHORT"], horizontal=True, key=f"practice_side_{ticker}")
+        rr = st.select_slider("Target reward-to-risk", options=[1.0, 1.5, 2.0, 2.5, 3.0], value=float(min([1.0, 1.5, 2.0, 2.5, 3.0], key=lambda v: abs(v - float(rr_ratio)))), key=f"practice_rr_{ticker}")
+        if st.button("Run historical practice", key=f"practice_run_{ticker}", type="primary"):
+            try:
+                replay = simulate_historical_practice(df, side, bars_back, horizon, rr)
+                st.session_state[f"practice_result_{ticker}"] = replay
+            except Exception as exc:
+                st.error(f"Could not run this practice scenario: {exc}")
+        replay = st.session_state.get(f"practice_result_{ticker}")
+        if replay:
+            st.markdown(f"**{replay['side']} result: {replay['outcome']}**")
+            r1, r2, r3 = st.columns(3)
+            r1.metric("Entry", f"${replay['entry']:,.{price_decimals(replay['entry'])}f}")
+            r2.metric("Exit", f"${replay['exit']:,.{price_decimals(replay['exit'])}f}")
+            r3.metric("Hypothetical result", f"{replay['pnl_pct']:+.2f}%", f"{replay['r_multiple']:+.2f}R")
+            st.caption(f"{display_asset_name(ticker)} · {replay['bars_checked']} candles · {replay['start_time']} to {replay['exit_time']}. {replay['note']}")
+        st.caption("Educational replay only: one historical setup, no fees/spread/slippage, and no claim that the next trade will behave the same way. If one candle touches both stop and target, the simulator assumes the stop happened first.")
+
 def scan_recommendation_candidates(
     scan_interval="15m", prepost=False, rr_ratio=1.8, extra_symbols=None,
     learning_trades=None, scan_offset=0, batch_size=30
@@ -769,6 +968,9 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         "vwap_gap_pct": ((price - vwap) / price) * 100,
         "ema_spread_pct": ((ema9 - ema20) / price) * 100,
         "volume_ratio": vol / max(vol_ma, 1.0),
+        "above_vwap": bool(above_vwap),
+        "ema_bullish": bool(ema_up),
+        "price_above_ema9": bool(price > ema9),
     }
 
 def get_higher_tf_bias(ticker, prepost, trend_interval="15m"):
@@ -1089,18 +1291,59 @@ def render_dashboard():
         c3.metric("RSI (Momentum)", f"{sig['rsi']:.0f}", help="Momentum gauge from 0 to 100. It can remain high or low during strong trends.")
         c4, c5 = st.columns(2)
         c4.metric("Setup Score", f"{sig['score']}/5", help="How many of the five technical checks are met. This is not a probability of success.")
+        trend_bias = get_higher_tf_bias(ticker, include_247, trend_interval)
         c5.metric(
             f"{'1h' if trend_interval == '60m' else trend_interval} Trend",
-            get_higher_tf_bias(ticker, include_247, trend_interval),
+            trend_bias,
             help=f"EMA 9 versus EMA 20 trend confirmation on the selected {trend_interval} timeframe."
         )
 
-        # Adaptive model is trained only on closed paper trades with a saved entry snapshot.
+        # The local model learns only from closed paper trades with an entry-time snapshot.
         adaptive_model = fit_adaptive_model(st.session_state.get("paper_trades", []), min_samples=20)
+        reward_assessment = build_reward_assessment(sig, adaptive_model, trend_bias, rr_ratio)
+        ai_estimate = reward_assessment.get("pattern_estimate")
+        info_heading(
+            f"🧠 AI Analysis — {asset_name} ({ticker})",
+            "Explains the selected asset's technical setup, target distance and (when enough of your closed paper trades exist) an experimental paper-history pattern estimate. Target distance is not a probability of success.",
+            3,
+        )
+        ai_c1, ai_c2, ai_c3 = st.columns(3)
+        if reward_assessment["side"] == "MIXED":
+            ai_c1.metric("Directional Assessment", "Mixed", f"Top score {reward_assessment['score']}/5")
+            ai_c2.metric("Potential Reward", "Not defined", "Wait for a clearer direction")
+        else:
+            side_label = "Bullish / Long" if reward_assessment["side"] == "LONG" else "Bearish / Short"
+            ai_c1.metric("AI Technical Assessment", reward_assessment["label"], f"{side_label} · {reward_assessment['score']}/5 checks")
+            ai_c2.metric(
+                "Potential Reward to Target",
+                f"{reward_assessment['potential_reward_pct']:+.2f}%",
+                f"Planned risk {reward_assessment['risk_pct']:.2f}% · {reward_assessment['reward_to_risk']:.2f}:1 R/R",
+                help="Percentage distance from the planned entry to the illustrative target. This is a scenario size, not the chance that the target will be reached.",
+            )
+        if ai_estimate is None:
+            ai_c3.metric("AI Paper-History Estimate", "Learning", f"{adaptive_model['sample_count']}/{adaptive_model['min_samples']} closed trades")
+        else:
+            ai_c3.metric(
+                "AI Paper-History Estimate",
+                f"{ai_estimate * 100:.1f}%",
+                f"Based on {adaptive_model['sample_count']} closed trades",
+                help="Experimental logistic-model output trained on your closed paper trades. It is not a calibrated win probability, forecast or guarantee.",
+            )
+        with st.expander("Why the AI assessment looks this way", expanded=True):
+            if reward_assessment["side"] == "MIXED":
+                st.info("Bullish and bearish technical checks are tied. Waiting for alignment is more informative than forcing a direction.")
+            else:
+                for reason in reward_assessment["reasons"]:
+                    st.markdown(f"- {reason}")
+            if ai_estimate is None:
+                st.caption("No statistically reliable reward probability is available yet. The model remains in learning mode until it has at least 20 non-break-even closed paper trades with both wins and losses and saved entry-time snapshots.")
+            else:
+                st.caption("The AI percentage is a pattern estimate from your own paper-trade history. It is not independently validated or calibrated; use the five technical checks and the risk/target levels to understand the scenario.")
+
         adaptive_side = "LONG" if sig["long_score"] >= sig["short_score"] else "SHORT"
         adaptive_features = directional_learning_features(sig, adaptive_side)
         adaptive_estimate = predict_adaptive_model(adaptive_model, adaptive_features)
-        with st.expander("🧠 Adaptive AI Strategy Assistant", expanded=False):
+        with st.expander("🧠 Adaptive AI Strategy Assistant — model details", expanded=False):
             info_heading(
                 "Learns from your paper-trading results",
                 "A small local machine-learning model learns patterns from closed simulated trades you made in this session. It does not place orders, retrain on live market outcomes, or guarantee accuracy.",
@@ -1153,15 +1396,57 @@ def render_dashboard():
         for r in sig["reasons"]:
             st.markdown(f"- {r}")
 
-        # Beginner Glossary / Dark-Themed Expander
-        with st.expander("👶 Beginner's Guide: What do these terms mean?"):
-            st.markdown("""
-- **VWAP (Fair Value Line)**: The average price people paid today, weighted by volume. If price is above VWAP, buyers are winning. If below, sellers are winning.
-- **RSI (Momentum Gauge)**: Tells you if a stock has moved too fast. Above 70 means it might be due for a cooldown; below 30 means it might bounce back up.
-- **EMA 9 & EMA 20 (Trend Lines)**: Short-term averages. When the faster line (9) is *above* the slower line (20), the short-term trend is pointing up.
-- **Stop Loss**: Your planned exit if price moves against the trade.
-- **Take Profit / Target**: The price where the simulated trade aims to close for a gain.
-            """)
+        # The glossary changes with the experience-level switch, so terms gain depth in Pro mode.
+        if dash_mode == "Beginner (Simple)":
+            with st.expander("👶 Beginner's Guide: What each term means", expanded=False):
+                st.markdown("""
+- **Ticker / Symbol**: The short code used to identify an asset. For example, AAPL is Apple and BTC-USD is Bitcoin priced in US dollars.
+- **Current Price / Quote**: The latest available price from the data provider. Quotes can be delayed or temporarily unavailable.
+- **Candle / Timeframe**: One candle summarizes price movement over a set period, such as 5 minutes or 1 hour. Shorter timeframes are faster but noisier.
+- **VWAP (Volume-Weighted Average Price)**: An average traded price that gives more weight to periods with more volume. Price above it can support a bullish reading; below it can support a bearish reading.
+- **RSI (Relative Strength Index)**: A momentum gauge from 0 to 100. Readings above 70 are often called overbought and below 30 oversold, but neither guarantees a reversal.
+- **EMA 9 / EMA 20 (Moving Averages)**: Smooth price lines. EMA 9 reacts faster; when it is above EMA 20, short-term momentum may be upward.
+- **ATR (Average True Range)**: A measure of how much price has been moving. It measures volatility, not direction.
+- **Volume / Volume vs. Average**: How much was traded. Comparing current volume with its recent average helps show whether activity is stronger or weaker than usual.
+- **Setup Score (0–5)**: Counts how many technical checks line up. A 4/5 score is not a 80% chance of winning.
+- **Trend Confirmation**: Checks whether another timeframe agrees with the selected chart's direction.
+- **LONG / Paper BUY**: A simulated position that benefits if the asset price rises.
+- **SHORT / Paper SHORT**: A simulated position that benefits if the asset price falls. Real short selling has extra borrow, margin and risk considerations.
+- **Entry Price**: The price used to start the simulated trade.
+- **Stop Loss**: The planned exit level if price moves against the idea. Actual market fills can differ from a stop level.
+- **Take Profit / Target**: The planned price where the simulation aims to take a gain.
+- **Potential Reward**: The amount the target would make if reached. It is a scenario, not a forecast or guarantee.
+- **Reward-to-Risk (R/R)**: Potential reward divided by planned risk. A 2:1 setup targets two dollars for each dollar at risk; it does not mean a 2-in-1 chance of winning.
+- **Position Size (Shares / Units)**: How many shares or crypto units the calculator suggests, based on the risk budget and stop distance.
+- **Risk Per Trade**: The share of the paper account you plan to lose at most if the stop is reached.
+- **Paper Trading**: Practice trades using simulated money. No broker order is sent and results may differ from real fills.
+- **AI Paper-History Estimate**: A small experimental model's pattern estimate based on your closed paper trades. It is not a proven or calibrated probability.
+- **Crypto Pair**: A coin quoted against another asset. BTC-USD means one Bitcoin quoted in US dollars; crypto trades 24/7.
+                """)
+        else:
+            with st.expander("📘 Advanced Reference: Definitions & Methodology", expanded=False):
+                st.markdown("""
+- **VWAP**: Cumulative sum of typical price × volume divided by cumulative volume for the session. It is a session benchmark, not intrinsic value.
+- **RSI (14)**: Exponentially smoothed average gains versus losses, transformed to a 0–100 oscillator. The 70/30 zones are heuristics, not standalone reversal triggers.
+- **EMA 9 / EMA 20**: Exponential moving averages with greater weight on recent observations. Their spread is used here as a short-horizon trend proxy.
+- **ATR (14)**: Smoothed True Range, where True Range is the maximum of high–low, |high–previous close| and |low–previous close|. ATR estimates volatility, not direction.
+- **Volume Ratio**: Current bar volume divided by its recent moving average. The scanner's volume check uses a threshold of 0.85×.
+- **Setup Score**: Five binary conditions: price/VWAP alignment, EMA alignment, price reclaim/EMA 9 confirmation, volume threshold and RSI range. Scores are rule confluence, not probabilities.
+- **Trend Confirmation**: EMA 9 versus EMA 20 on the independently selected confirmation interval. Divergence is a reason to reduce confidence or wait.
+- **ATR Stop Distance**: The quick calculator uses the larger of 1.25× ATR or 0.25% of price to establish a volatility-aware stop gap.
+- **Position Sizing**: Quantity is constrained by risk budget ÷ entry-to-stop distance and by account buying power. Stocks are whole shares; crypto permits fractional units.
+- **Reward-to-Risk**: Absolute entry-to-target distance divided by entry-to-stop distance, before spread, commission, slippage, borrow fees or taxes.
+- **Potential Reward %**: Absolute target distance as a percentage of planned entry. It is not the probability of reaching the target.
+- **AI Pattern Estimate**: Logistic-model output from closed paper trades with saved entry snapshots. The in-session training sample is small and not out-of-sample calibrated; do not treat it as a forecast.
+- **Historical Practice Replay**: One hypothetical entry on a historical candle, followed by a fixed number of candles. If a bar touches both stop and target, the simulator assumes the stop occurs first.
+- **Data Limitations**: Yahoo Finance intervals, screeners and quotes may be delayed, missing or rate-limited. Results may vary by market session and asset.
+                """)
+
+        if dash_mode == "Beginner (Simple)":
+            st.markdown("---")
+            info_heading("🎓 Beginner Learning Lab", "Learn the terms with a short factual quiz and practice one hypothetical LONG or SHORT on historical candles from the currently selected asset. The exercise does not use real money.", 3)
+            render_beginner_quiz()
+            render_historical_practice_simulator(df, ticker, rr_ratio)
 
         # Full-width, automatic Quick Trade Execution. Build a separate calculator
         # for each side so the SHORT button never inherits the LONG quantity/levels.
