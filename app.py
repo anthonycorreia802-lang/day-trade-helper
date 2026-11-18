@@ -119,7 +119,7 @@ def search_stock_symbols(query):
     if len(query) < 1:
         return []
     try:
-        result = yf.Search(query, max_results=15)
+        result = yf.Search(query, max_results=50)
         quotes = getattr(result, "quotes", []) or []
         matches = []
         for item in quotes:
@@ -145,17 +145,92 @@ ASSET_NAMES = {
     "PLTR": "Palantir Technologies", "ORCL": "Oracle Corporation",
     "BTC-USD": "Bitcoin", "ETH-USD": "Ethereum", "SOL-USD": "Solana", "XRP-USD": "XRP",
     "BNB-USD": "BNB", "DOGE-USD": "Dogecoin", "ADA-USD": "Cardano", "AVAX-USD": "Avalanche",
-    "LINK-USD": "Chainlink", "LTC-USD": "Litecoin", "BCH-USD": "Bitcoin Cash", "DOT-USD": "Polkadot"
+    "LINK-USD": "Chainlink", "LTC-USD": "Litecoin", "BCH-USD": "Bitcoin Cash", "DOT-USD": "Polkadot",
+    "TRX-USD": "TRON", "SHIB-USD": "Shiba Inu", "TON-USD": "Toncoin", "XLM-USD": "Stellar",
+    "HBAR-USD": "Hedera", "SUI-USD": "Sui", "NEAR-USD": "NEAR Protocol", "UNI-USD": "Uniswap",
+    "ICP-USD": "Internet Computer", "ETC-USD": "Ethereum Classic", "ATOM-USD": "Cosmos",
+    "FIL-USD": "Filecoin", "APT-USD": "Aptos", "ARB-USD": "Arbitrum", "OP-USD": "Optimism",
+    "INJ-USD": "Injective", "IMX-USD": "Immutable", "STX-USD": "Stacks", "SEI-USD": "Sei",
+    "PEPE-USD": "Pepe", "RENDER-USD": "Render", "ALGO-USD": "Algorand", "XTZ-USD": "Tezos",
+    "EOS-USD": "EOS", "MKR-USD": "Maker", "AAVE-USD": "Aave", "GRT-USD": "The Graph",
+    "VET-USD": "VeChain", "MANA-USD": "Decentraland", "SAND-USD": "The Sandbox", "THETA-USD": "Theta Network",
+    "FET-USD": "Artificial Superintelligence Alliance", "RUNE-USD": "THORChain", "CRV-USD": "Curve DAO",
+    "LDO-USD": "Lido DAO", "JUP-USD": "Jupiter", "BONK-USD": "Bonk", "WIF-USD": "dogwifhat"
 }
 STOCK_RECOMMENDATION_UNIVERSE = [
     "SPY", "QQQ", "IWM", "DIA", "AAPL", "MSFT", "NVDA", "AMD", "AMZN", "META",
     "GOOGL", "TSLA", "AVGO", "NFLX", "JPM", "XOM", "LLY", "COST", "PLTR", "ORCL"
 ]
 CRYPTO_RECOMMENDATION_UNIVERSE = [
-    "BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "BNB-USD", "DOGE-USD",
-    "ADA-USD", "AVAX-USD", "LINK-USD", "LTC-USD", "BCH-USD", "DOT-USD"
+    "BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "BNB-USD", "DOGE-USD", "ADA-USD", "AVAX-USD",
+    "LINK-USD", "LTC-USD", "BCH-USD", "DOT-USD", "TRX-USD", "SHIB-USD", "TON-USD", "XLM-USD",
+    "HBAR-USD", "SUI-USD", "NEAR-USD", "UNI-USD", "ICP-USD", "ETC-USD", "ATOM-USD", "FIL-USD",
+    "APT-USD", "ARB-USD", "OP-USD", "INJ-USD", "IMX-USD", "STX-USD", "SEI-USD", "PEPE-USD",
+    "RENDER-USD", "ALGO-USD", "XTZ-USD", "EOS-USD", "MKR-USD", "AAVE-USD", "GRT-USD", "VET-USD",
+    "MANA-USD", "SAND-USD", "THETA-USD", "FET-USD", "RUNE-USD", "CRV-USD", "LDO-USD", "JUP-USD",
+    "BONK-USD", "WIF-USD"
 ]
 RECOMMENDATION_UNIVERSE = STOCK_RECOMMENDATION_UNIVERSE + CRYPTO_RECOMMENDATION_UNIVERSE
+
+# Yahoo Finance screeners refresh the stock universe, so the scanner is not limited
+# to the original hard-coded sample. Search remains available for other listed tickers.
+MARKET_STOCK_SCREENERS = (
+    "most_actives", "day_gainers", "day_losers", "small_cap_gainers",
+    "growth_technology_stocks", "most_shorted_stocks"
+)
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def discover_market_universe():
+    """Discover a broad rotating universe of Yahoo-listed equities, ETFs and crypto pairs.
+
+    Yahoo limits each screener response; this is a broad active-market universe, not
+    a claim that every security worldwide can be enumerated or scanned at once.
+    """
+    discovered = {}
+
+    def add_quote(item, forced_type=None):
+        if not isinstance(item, dict):
+            return
+        symbol = str(item.get("symbol") or "").upper().strip()
+        qtype = str(item.get("quoteType") or forced_type or "").upper()
+        if not symbol or qtype not in {"EQUITY", "ETF", "CRYPTO", "CRYPTOCURRENCY"}:
+            return
+        asset_type = "CRYPTO" if qtype in {"CRYPTO", "CRYPTOCURRENCY"} else qtype
+        discovered[symbol] = {
+            "symbol": symbol,
+            "name": item.get("shortName") or item.get("shortname") or item.get("longName") or item.get("longname") or ASSET_NAMES.get(symbol, symbol),
+            "type": asset_type,
+        }
+
+    # Baseline coverage guarantees common tickers remain available if a screener fails.
+    for symbol in RECOMMENDATION_UNIVERSE:
+        discovered[symbol] = {
+            "symbol": symbol,
+            "name": ASSET_NAMES.get(symbol, symbol),
+            "type": "CRYPTO" if symbol.endswith("-USD") else "EQUITY",
+        }
+
+    if callable(getattr(yf, "screen", None)):
+        for screen_name in MARKET_STOCK_SCREENERS:
+            try:
+                response = yf.screen(screen_name, count=100)
+                quotes = response.get("quotes", []) if isinstance(response, dict) else []
+                for item in quotes:
+                    add_quote(item)
+            except Exception:
+                continue
+
+    # Search additional crypto listings not present in the baseline dictionary.
+    for search_term in ("USD cryptocurrency", "crypto USD", "altcoins USD"):
+        try:
+            result = yf.Search(search_term, max_results=50)
+            for item in (getattr(result, "quotes", []) or []):
+                add_quote(item, forced_type="CRYPTOCURRENCY")
+        except Exception:
+            continue
+
+    return list(discovered.values())
 
 
 def display_asset_name(symbol):
@@ -269,10 +344,129 @@ def build_quick_trade_plan(signal, price, stop_gap, rr_ratio, side, digits=2):
     return {"entry": float(entry), "stop": float(stop), "target": float(target), "side": side}
 
 
-def scan_recommendation_candidates(scan_interval="15m", prepost=False, rr_ratio=1.8):
-    """Rank a curated universe of liquid US stocks/ETFs and major crypto pairs."""
+
+AI_FEATURE_NAMES = (
+    "setup_strength", "vwap_alignment", "ema_alignment",
+    "momentum_alignment", "volume_confirmation"
+)
+
+
+def directional_learning_features(signal, side):
+    """Create direction-normalized, bounded features from a signal snapshot."""
+    side = str(side).upper()
+    if side not in {"LONG", "SHORT"}:
+        raise ValueError("side must be LONG or SHORT")
+    direction = 1.0 if side == "LONG" else -1.0
+    score = float(signal.get("long_score" if side == "LONG" else "short_score", 0.0))
+    rsi = float(signal.get("rsi", 50.0))
+    vwap_gap = float(signal.get("vwap_gap_pct", 0.0))
+    ema_spread = float(signal.get("ema_spread_pct", 0.0))
+    volume_ratio = float(signal.get("volume_ratio", 1.0))
+    clip = lambda value: float(np.clip(value, -1.0, 1.0))
+    return {
+        "setup_strength": clip((score / 5.0) * 2.0 - 1.0),
+        "vwap_alignment": clip(direction * vwap_gap / 0.50),
+        "ema_alignment": clip(direction * ema_spread / 0.30),
+        "momentum_alignment": clip(direction * (rsi - 50.0) / 25.0),
+        "volume_confirmation": clip((volume_ratio - 1.0) / 1.5),
+    }
+
+
+def fit_adaptive_model(paper_trades, min_samples=20):
+    """Fit a small, transparent logistic model only on closed paper trades with snapshots."""
+    samples, outcomes = [], []
+    for trade in paper_trades or []:
+        if not isinstance(trade, dict) or str(trade.get("status", "")).upper() != "CLOSED":
+            continue
+        features = trade.get("ai_features")
+        pnl = trade.get("pnl")
+        if not isinstance(features, dict) or pnl is None:
+            continue
+        try:
+            vector = [float(features[name]) for name in AI_FEATURE_NAMES]
+            outcome = 1.0 if float(pnl) > 0 else (0.0 if float(pnl) < 0 else None)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if outcome is None or not np.all(np.isfinite(vector)):
+            continue
+        samples.append(vector)
+        outcomes.append(outcome)
+
+    sample_count = len(samples)
+    win_rate = float(np.mean(outcomes)) if outcomes else None
+    if sample_count < int(min_samples) or len(set(outcomes)) < 2:
+        return {
+            "active": False, "sample_count": sample_count, "min_samples": int(min_samples),
+            "win_rate": win_rate, "reason": "More varied closed paper trades are needed before fitting a model."
+        }
+
+    x = np.asarray(samples, dtype=float)
+    y = np.asarray(outcomes, dtype=float)
+    mean = x.mean(axis=0)
+    scale = x.std(axis=0)
+    scale[scale < 1e-6] = 1.0
+    x_scaled = (x - mean) / scale
+    x_design = np.column_stack([np.ones(len(x_scaled)), x_scaled])
+    weights = np.zeros(x_design.shape[1], dtype=float)
+    # Deterministic batch gradient descent; modest L2 penalty limits overfitting.
+    for _ in range(700):
+        logits = np.clip(x_design @ weights, -20, 20)
+        probabilities = 1.0 / (1.0 + np.exp(-logits))
+        gradient = (x_design.T @ (probabilities - y)) / len(y)
+        gradient[1:] += 0.08 * weights[1:]
+        weights -= 0.08 * gradient
+    return {
+        "active": True, "sample_count": sample_count, "min_samples": int(min_samples),
+        "win_rate": win_rate, "weights": weights.tolist(),
+        "mean": mean.tolist(), "scale": scale.tolist(),
+        "feature_names": list(AI_FEATURE_NAMES),
+    }
+
+
+def predict_adaptive_model(model, features):
+    """Return a paper-history pattern estimate, or None while the model is learning."""
+    if not model or not model.get("active") or not isinstance(features, dict):
+        return None
+    try:
+        x = np.asarray([float(features[name]) for name in AI_FEATURE_NAMES], dtype=float)
+        mean = np.asarray(model["mean"], dtype=float)
+        scale = np.asarray(model["scale"], dtype=float)
+        weights = np.asarray(model["weights"], dtype=float)
+        z = float(np.r_[1.0, (x - mean) / scale] @ weights)
+        return float(1.0 / (1.0 + np.exp(-np.clip(z, -20, 20))))
+    except (KeyError, TypeError, ValueError, FloatingPointError):
+        return None
+
+def scan_recommendation_candidates(
+    scan_interval="15m", prepost=False, rr_ratio=1.8, extra_symbols=None,
+    learning_trades=None, scan_offset=0, batch_size=30
+):
+    """Scan a rotating basket from a broad live market universe plus pinned watchlist assets."""
+    universe = discover_market_universe()
+    names = {item["symbol"]: item.get("name", item["symbol"]) for item in universe}
+    all_symbols = list(dict.fromkeys(item["symbol"] for item in universe))
+
+    pinned = []
+    for symbol in (extra_symbols or []):
+        symbol = str(symbol).strip().upper()
+        if symbol and symbol not in pinned:
+            pinned.append(symbol)
+            if symbol not in names:
+                names[symbol] = ASSET_NAMES.get(symbol, symbol)
+                all_symbols.insert(0, symbol)
+    rotating = [symbol for symbol in all_symbols if symbol not in pinned]
+    if rotating:
+        start = int(scan_offset or 0) % len(rotating)
+        batch = [rotating[(start + i) % len(rotating)] for i in range(min(int(batch_size), len(rotating)))]
+        next_offset = (start + len(batch)) % len(rotating)
+    else:
+        batch, next_offset = [], 0
+    symbols_to_scan = list(dict.fromkeys(pinned + batch))
+
+    adaptive_model = fit_adaptive_model(learning_trades or [])
     rows = []
-    for symbol in RECOMMENDATION_UNIVERSE:
+    scanned_ok = 0
+    for symbol in symbols_to_scan:
         try:
             raw = get_intraday_data(symbol, scan_interval, prepost=prepost)
             if raw is None or raw.empty or len(raw) < 30:
@@ -280,12 +474,11 @@ def scan_recommendation_candidates(scan_interval="15m", prepost=False, rr_ratio=
             enriched = add_indicators(raw)
             daily = get_daily_stats(symbol)
             live_quote = get_fast_quote(symbol)
-            stats = compute_price_targets_and_signal(
-                enriched, live_quote, daily, scan_interval, rr_ratio
-            )
+            stats = compute_price_targets_and_signal(enriched, live_quote, daily, scan_interval, rr_ratio)
             side = stats["side"]
             if side not in {"LONG", "SHORT"} or int(stats["score"]) < 3:
                 continue
+            scanned_ok += 1
             current_price = float(stats["price"])
             entry_price = float(stats["ideal_buy"])
             target_price = float(stats["ideal_sell"])
@@ -294,10 +487,12 @@ def scan_recommendation_candidates(scan_interval="15m", prepost=False, rr_ratio=
                 target_pct = ((entry_price / max(target_price, 0.000001)) - 1) * 100
             day_change_pct = float(daily.get("change_pct", 0.0)) if daily else 0.0
             digits = price_decimals(current_price)
+            features = directional_learning_features(stats, side)
+            ai_probability = predict_adaptive_model(adaptive_model, features)
             rows.append({
-                "Asset Name": display_asset_name(symbol),
+                "Asset Name": names.get(symbol, display_asset_name(symbol)),
                 "Symbol": symbol,
-                "Asset Type": "Crypto" if symbol.endswith("-USD") else "Stock / ETF",
+                "Asset Type": "Crypto" if symbol.endswith("-USD") else ("ETF" if symbol in names and "ETF" in names.get(symbol, "") else "Stock / ETF"),
                 "Price": round(current_price, digits),
                 "Today %": round(day_change_pct, 2),
                 "Bias": "Bullish" if side == "LONG" else "Bearish",
@@ -307,14 +502,23 @@ def scan_recommendation_candidates(scan_interval="15m", prepost=False, rr_ratio=
                 "Entry": round(entry_price, digits),
                 "Stop": round(stats["stop"], digits),
                 "RSI": round(stats["rsi"], 1),
+                "AI Pattern": f"{ai_probability * 100:.0f}%" if ai_probability is not None else "Learning",
                 "_score": int(stats["score"]),
                 "_reward_pct": float(target_pct),
+                "_ai_probability": ai_probability if ai_probability is not None else 0.5,
                 "_side": side
             })
         except Exception:
             continue
-    rows.sort(key=lambda row: (row["_score"], row["_reward_pct"]), reverse=True)
-    return rows
+    rows.sort(key=lambda row: (row["_score"], row["_ai_probability"], row["_reward_pct"]), reverse=True)
+    return {
+        "rows": rows,
+        "pool_size": len(all_symbols),
+        "batch_size": len(symbols_to_scan),
+        "next_offset": next_offset,
+        "scanned_count": scanned_ok,
+        "ai_active": bool(adaptive_model.get("active")),
+    }
 
 # ---------- Session State ----------
 defaults = {
@@ -324,18 +528,9 @@ defaults = {
     "account_size": 25000.0,
     "daily_loss_limit": 300.0,
     "last_alert_action": None,
-    "buy_alerts_enabled": True,
-    "buy_alert_symbols": None,
-    "buy_alert_timeframe": "5m",
-    "buy_alert_frequency": 60,
-    "buy_alert_early_watch": False,
-    "buy_alert_results": [],
-    "buy_alert_events": [],
-    "buy_alert_last_signatures": {},
-    "buy_alert_future": None,
-    "buy_alert_requested_at": 0.0,
-    "buy_alert_processed_at": None,
-    "buy_alert_force_refresh": False
+    "market_scan_cursor": 0,
+    "recommendation_pool_size": 0,
+    "ai_min_learning_samples": 20
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -344,8 +539,6 @@ for k, v in defaults.items():
 for crypto_symbol in ["BTC-USD", "ETH-USD"]:
     if crypto_symbol not in st.session_state.watchlist:
         st.session_state.watchlist.append(crypto_symbol)
-if st.session_state.buy_alert_symbols is None:
-    st.session_state.buy_alert_symbols = list(st.session_state.watchlist)
 
 # ---------- Market Session Helper ----------
 def get_market_session():
@@ -572,7 +765,10 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         "ideal_buy": ideal_buy, "ideal_sell": ideal_sell, "stop": stop,
         "stop_dist": abs(ideal_buy - stop), "hourly_target": hourly_target,
         "daily_target": daily_target, "daily_range": daily_range,
-        "long_score": long_score, "short_score": short_score
+        "long_score": long_score, "short_score": short_score,
+        "vwap_gap_pct": ((price - vwap) / price) * 100,
+        "ema_spread_pct": ((ema9 - ema20) / price) * 100,
+        "volume_ratio": vol / max(vol_ma, 1.0),
     }
 
 def get_higher_tf_bias(ticker, prepost, trend_interval="15m"):
@@ -592,187 +788,6 @@ def get_higher_tf_bias(ticker, prepost, trend_interval="15m"):
         return "⚪ Neutral"
     except Exception:
         return "Unavailable"
-
-
-def classify_buy_alert_signal(sig):
-    """Classify a signal as confirmed BUY, developing bullish watch, or wait."""
-    long_score = int(sig.get("long_score", 0))
-    short_score = int(sig.get("short_score", 0))
-    action = str(sig.get("action", ""))
-    if action.startswith("🚀 BUY NOW") and long_score >= 4 and long_score > short_score:
-        return "BUY ALERT"
-    if long_score >= 3 and long_score > short_score:
-        return "BULLISH WATCH"
-    return "WAIT"
-
-
-def scan_selected_buy_alerts(symbols, alert_interval="5m", prepost=False, rr_ratio=1.8):
-    """Evaluate user-selected watchlist symbols for confirmed or developing long setups."""
-    rows = []
-    for symbol in list(dict.fromkeys(str(x).upper().strip() for x in symbols if str(x).strip())):
-        try:
-            raw = get_intraday_data(symbol, alert_interval, prepost=prepost)
-            if raw is None or raw.empty or len(raw) < 30:
-                rows.append({"Symbol": symbol, "Asset Name": display_asset_name(symbol), "Status": "NO DATA"})
-                continue
-            enriched = add_indicators(raw)
-            daily = get_daily_stats(symbol)
-            quote = get_fast_quote(symbol)
-            sig = compute_price_targets_and_signal(enriched, quote, daily, alert_interval, rr_ratio)
-            rows.append({
-                "Symbol": symbol,
-                "Asset Name": display_asset_name(symbol),
-                "Status": classify_buy_alert_signal(sig),
-                "Price": float(sig["price"]),
-                "Long Score": int(sig["long_score"]),
-                "Short Score": int(sig["short_score"]),
-                "Entry": float(sig["ideal_buy"]),
-                "Stop": float(sig["stop"]),
-                "Target": float(sig["ideal_sell"]),
-                "RSI": float(sig["rsi"]),
-                "Reason": str(sig["action"]),
-            })
-        except Exception as exc:
-            rows.append({"Symbol": symbol, "Asset Name": display_asset_name(symbol), "Status": "UNAVAILABLE", "Reason": str(exc)[:100]})
-    return rows
-
-
-@st.cache_resource
-def get_buy_alert_executor():
-    """A dedicated worker keeps selected-symbol alert checks off the main UI thread."""
-    return ThreadPoolExecutor(max_workers=1, thread_name_prefix="selected-buy-alerts")
-
-
-@st.fragment(run_every=15)
-def render_buy_alert_monitor():
-    """Poll selected symbols and notify once when a new bullish signal appears."""
-    info_heading(
-        "🔔 Buy Alerts for Selected Stocks",
-        "Monitors your selected watchlist symbols and the currently loaded asset. A BUY ALERT means the app's bullish checklist is aligned; a bullish watch is an early setup, not a confirmed entry. Alerts only run while this app is open.",
-        3,
-    )
-    if not st.session_state.get("buy_alerts_enabled", True):
-        st.caption("Buy alerts are paused. Turn them on in the sidebar under Buy Alert Settings.")
-        return
-
-    selected = list(st.session_state.get("buy_alert_symbols") or [])
-    active = st.session_state.get("active_ticker")
-    symbols = list(dict.fromkeys(selected + ([active] if active else [])))
-    if not symbols:
-        st.info("Select at least one stock or crypto asset in the sidebar to monitor for buy alerts.")
-        return
-
-    if st.button("↻ Check selected stocks now", key="force_selected_buy_alert_scan"):
-        st.session_state.buy_alert_force_refresh = True
-
-    future = st.session_state.get("buy_alert_future")
-    requested_at = float(st.session_state.get("buy_alert_requested_at") or 0.0)
-    now_ts = datetime.now().timestamp()
-    scan_frequency = int(st.session_state.get("buy_alert_frequency", 60))
-    force = bool(st.session_state.pop("buy_alert_force_refresh", False))
-
-    if future is None or (future.done() and (force or now_ts - requested_at >= scan_frequency)):
-        future = get_buy_alert_executor().submit(
-            scan_selected_buy_alerts,
-            tuple(symbols),
-            st.session_state.get("buy_alert_timeframe", "5m"),
-            True,
-            float(st.session_state.get("alert_rr_ratio", 1.8)),
-        )
-        requested_at = now_ts
-        st.session_state.buy_alert_future = future
-        st.session_state.buy_alert_requested_at = requested_at
-        st.session_state.buy_alert_processed_at = None
-    elif force and future is not None and not future.done():
-        st.caption("A selected-stock alert scan is already running; its results will appear when it finishes.")
-
-    if future is None:
-        st.caption("Starting selected-stock alert monitor…")
-        return
-    if not future.done():
-        st.caption(f"Checking {len(symbols)} selected assets · refresh about every {scan_frequency} seconds…")
-        previous_rows = st.session_state.get("buy_alert_results", [])
-        if not previous_rows:
-            return
-
-    if future.done() and st.session_state.get("buy_alert_processed_at") != requested_at:
-        try:
-            results = future.result()
-            st.session_state.buy_alert_results = results
-            signatures = dict(st.session_state.get("buy_alert_last_signatures", {}))
-            events = list(st.session_state.get("buy_alert_events", []))
-            notify_early = bool(st.session_state.get("buy_alert_early_watch", False))
-            new_events = []
-            for row in results:
-                symbol = row.get("Symbol")
-                status = row.get("Status", "WAIT")
-                should_notify = status == "BUY ALERT" or (notify_early and status == "BULLISH WATCH")
-                signature = status if should_notify else None
-                if should_notify and signatures.get(symbol) != signature:
-                    event = {
-                        "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %I:%M:%S %p ET"),
-                        "Symbol": symbol,
-                        "Asset Name": row.get("Asset Name", symbol),
-                        "Status": status,
-                        "Price": row.get("Price"),
-                        "Long Score": row.get("Long Score"),
-                        "Entry": row.get("Entry"),
-                        "Stop": row.get("Stop"),
-                        "Target": row.get("Target"),
-                    }
-                    events.insert(0, event)
-                    new_events.append(event)
-                signatures[symbol] = signature
-            st.session_state.buy_alert_last_signatures = signatures
-            st.session_state.buy_alert_events = events[:30]
-            st.session_state.buy_alert_processed_at = requested_at
-            for event in new_events[:3]:
-                if event["Status"] == "BUY ALERT":
-                    st.toast(
-                        f"BUY ALERT · {event['Asset Name']} ({event['Symbol']}) · ${float(event['Price']):,.{price_decimals(event['Price'])}f} · score {event['Long Score']}/5",
-                        icon="🚀",
-                    )
-                else:
-                    st.toast(f"Bullish watch · {event['Asset Name']} ({event['Symbol']}) · wait for confirmation", icon="👀")
-        except Exception as exc:
-            st.session_state.buy_alert_error = str(exc)
-            st.session_state.buy_alert_processed_at = requested_at
-
-    results = st.session_state.get("buy_alert_results", [])
-    if results:
-        strong = [row for row in results if row.get("Status") == "BUY ALERT"]
-        developing = [row for row in results if row.get("Status") == "BULLISH WATCH"]
-        if strong:
-            st.success(f"🚀 {len(strong)} confirmed BUY setup(s): " + ", ".join(f"{r['Asset Name']} ({r['Symbol']})" for r in strong))
-        elif developing:
-            st.info(f"👀 {len(developing)} bullish setup(s) developing. Wait for full confirmation before treating them as a buy signal.")
-        else:
-            st.caption("No confirmed BUY setup among the selected assets on the latest scan.")
-
-        display_rows = []
-        for row in results:
-            price_value = row.get("Price")
-            digits = price_decimals(price_value) if price_value and np.isfinite(float(price_value)) else 2
-            display_rows.append({
-                "Asset": row.get("Asset Name", row.get("Symbol", "—")),
-                "Ticker": row.get("Symbol", "—"),
-                "Alert": row.get("Status", "—"),
-                "Price": f"${float(price_value):,.{digits}f}" if price_value is not None else "—",
-                "Score": f"{row.get('Long Score', '—')}/5" if row.get("Long Score") is not None else "—",
-                "Entry Area": f"${float(row['Entry']):,.{digits}f}" if row.get("Entry") is not None else "—",
-                "Stop": f"${float(row['Stop']):,.{digits}f}" if row.get("Stop") is not None else "—",
-                "Target": f"${float(row['Target']):,.{digits}f}" if row.get("Target") is not None else "—",
-            })
-        st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
-    else:
-        st.caption("No scan results yet. The first selected-stock scan is running in the background.")
-
-    events = st.session_state.get("buy_alert_events", [])
-    if events:
-        with st.expander(f"📣 Recent Buy Alerts ({len(events)})", expanded=False):
-            st.dataframe(pd.DataFrame(events), use_container_width=True, hide_index=True)
-    if st.session_state.get("buy_alert_error"):
-        st.caption("The latest alert scan had a temporary data issue. Check ticker symbols or try again.")
 
 # ---------- ALWAYS-REFRESHING MARKET CANDIDATES ----------
 @st.cache_resource
@@ -805,9 +820,9 @@ def normalize_candidate_row(raw_row):
 def render_top_market_candidates(compact=False):
     """Poll a single background scan; retain the last good results during refresh."""
     if compact:
-        info_heading("⭐ Top Market Candidates", "Automatically refreshed technical watch ideas from a curated liquid-stock universe. A score is a checklist count, not a probability or prediction.", 3)
+        info_heading("⭐ Top Market Candidates", "Automatically refreshed ideas from a broad Yahoo Finance stock/ETF screener plus crypto discovery. The scanner rotates through symbols in batches; it cannot process every global listing simultaneously.", 3)
     else:
-        info_heading("⭐ Top Market Candidates", "Automatically refreshed technical watch ideas from a curated liquid-stock universe. Target distances are rule-based scenarios, not promised returns.", 2)
+        info_heading("⭐ Top Market Candidates", "Automatically refreshed ideas from a broad Yahoo Finance stock/ETF screener plus crypto discovery. The scanner rotates through symbols in batches; target distances are scenarios, not forecasts.", 2)
 
     if st.button("↻ Refresh candidates", key="top_candidate_refresh", use_container_width=True):
         st.session_state["recommendation_force_refresh"] = True
@@ -822,13 +837,30 @@ def render_top_market_candidates(compact=False):
         future = None
 
     if future is None or (future.done() and now_ts - requested_at >= 300):
-        future = get_market_scan_executor().submit(scan_recommendation_candidates, "15m", False, 1.8)
+        pinned_symbols = list(dict.fromkeys(
+            list(st.session_state.get("watchlist", [])) + [st.session_state.get("active_ticker", "SPY")]
+        ))
+        learning_snapshot = [dict(t) for t in st.session_state.get("paper_trades", []) if isinstance(t, dict)]
+        future = get_market_scan_executor().submit(
+            scan_recommendation_candidates, "15m", False, 1.8,
+            pinned_symbols, learning_snapshot,
+            int(st.session_state.get("market_scan_cursor", 0)), 30
+        )
         st.session_state["recommendation_future"] = future
         st.session_state["recommendation_requested_at"] = now_ts
 
     if future.done():
         try:
-            rows = future.result()
+            scan_result = future.result()
+            if isinstance(scan_result, dict):
+                rows = scan_result.get("rows", [])
+                st.session_state["market_scan_cursor"] = scan_result.get("next_offset", 0)
+                st.session_state["recommendation_pool_size"] = scan_result.get("pool_size", 0)
+                st.session_state["recommendation_batch_size"] = scan_result.get("batch_size", 0)
+                st.session_state["recommendation_scanned_count"] = scan_result.get("scanned_count", 0)
+                st.session_state["recommendation_ai_active"] = scan_result.get("ai_active", False)
+            else:
+                rows = scan_result or []
             st.session_state["recommendation_rows"] = rows
             st.session_state["recommendation_scan_time"] = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %I:%M:%S %p ET")
             st.session_state["recommendation_last_error"] = None
@@ -839,9 +871,18 @@ def render_top_market_candidates(compact=False):
     # Normalize at display time so deployments and browser sessions do not crash.
     candidates = [normalize_candidate_row(row) for row in st.session_state.get("recommendation_rows", [])]
     st.session_state["recommendation_rows"] = candidates
+    # Preserve full names for assets discovered dynamically so later panels use them too.
+    ASSET_NAMES.update({row["Symbol"]: row["Asset Name"] for row in candidates})
     scan_time = st.session_state.get("recommendation_scan_time")
     if scan_time:
         st.caption(f"Updated {scan_time}")
+    pool_size = int(st.session_state.get("recommendation_pool_size", 0) or 0)
+    if pool_size:
+        st.caption(
+            f"Market universe: {pool_size:,} discovered symbols · "
+            f"{int(st.session_state.get('recommendation_batch_size', 0) or 0)} watched/scanned this pass · "
+            "remaining symbols rotate into later scans."
+        )
     if not future.done():
         st.caption("⏳ Scanning in background… showing previous results until complete." if candidates else "⏳ First scan running in background…")
     if st.session_state.get("recommendation_last_error"):
@@ -871,7 +912,7 @@ def render_top_market_candidates(compact=False):
 
     if bullish:
         st.markdown("#### 🟢 Bullish candidates")
-        bullish_df = pd.DataFrame(bullish[:8]).drop(columns=["_score", "_reward_pct", "_side"], errors="ignore")
+        bullish_df = pd.DataFrame(bullish[:8]).drop(columns=["_score", "_reward_pct", "_ai_probability", "_side"], errors="ignore")
         for col in ["Price", "Target Price", "Entry", "Stop"]:
             bullish_df[col] = bullish_df[col].map(lambda value: f"${float(value):,.{price_decimals(value)}f}")
         bullish_df = bullish_df.rename(columns={"Price": "Current Price", "Today %": "Day Change %", "Target Price": "Target Price", "Potential %": "Target Distance %", "Entry": "Entry Area"})
@@ -880,7 +921,7 @@ def render_top_market_candidates(compact=False):
         st.info("No bullish candidates currently meet the scanner's minimum technical score.")
     if bearish:
         with st.expander("🔻 Bearish / short candidates", expanded=False):
-            bearish_df = pd.DataFrame(bearish[:6]).drop(columns=["_score", "_reward_pct", "_side"], errors="ignore")
+            bearish_df = pd.DataFrame(bearish[:6]).drop(columns=["_score", "_reward_pct", "_ai_probability", "_side"], errors="ignore")
             for col in ["Price", "Target Price", "Entry", "Stop"]:
                 bearish_df[col] = bearish_df[col].map(lambda value: f"${float(value):,.{price_decimals(value)}f}")
             bearish_df = bearish_df.rename(columns={"Price": "Current Price", "Today %": "Day Change %", "Target Price": "Target Price", "Potential %": "Target Distance %", "Entry": "Entry Area"})
@@ -947,30 +988,6 @@ with st.sidebar:
             st.rerun()
 
     st.markdown("---")
-    info_heading("🔔 Buy Alert Settings", "Choose which stocks or crypto assets to monitor. A confirmed alert requires the app's strong bullish signal. Optional early alerts are labelled as developing, not as a buy confirmation.", 3)
-    st.checkbox("Enable selected-stock buy alerts", key="buy_alerts_enabled", help="Shows in-app alerts while this terminal is open. This does not send SMS, email, or broker notifications.")
-    alert_options = list(dict.fromkeys(st.session_state.watchlist + [st.session_state.active_ticker]))
-    alert_defaults = [sym for sym in (st.session_state.get("buy_alert_symbols") or []) if sym in alert_options]
-    selected_alert_symbols = st.multiselect(
-        "Monitor these selected assets",
-        options=alert_options,
-        default=alert_defaults,
-        format_func=lambda sym: f"{display_asset_name(sym)} ({sym})",
-        key="buy_alert_symbols_picker",
-        help="Choose the watchlist stocks and crypto you want checked for a bullish entry setup. The currently loaded asset is also checked automatically.",
-    )
-    st.session_state.buy_alert_symbols = selected_alert_symbols
-    st.selectbox("Alert timeframe", ["1m", "2m", "5m", "15m"], index=2, key="buy_alert_timeframe", help="Timeframe used to evaluate alert signals. Shorter timeframes can be noisier.")
-    st.selectbox(
-        "Alert scan frequency",
-        options=[30, 60, 120, 300],
-        index=1,
-        format_func=lambda value: {30: "Every 30 seconds", 60: "Every 1 minute", 120: "Every 2 minutes", 300: "Every 5 minutes"}[value],
-        key="buy_alert_frequency",
-    )
-    st.checkbox("Also notify me about early bullish setups", key="buy_alert_early_watch", value=False, help="Adds a separate WATCH alert when 3/5 bullish checks are present. It is not a confirmed BUY signal.")
-
-    st.markdown("---")
     info_heading("📈 Chart & Risk Controls", "Set the chart display, confirmation timeframe, position sizing assumptions and account risk limits.", 3)
     chart_type = st.selectbox("Chart Style", ["Candlestick", "Line Chart"], index=0,
                               help="Candlesticks show open, high, low and close. Line charts connect closing prices.")
@@ -1021,6 +1038,11 @@ def render_dashboard():
 
         price = sig["price"]
         
+        if "BUY NOW" in sig["action"] or "SHORT" in sig["action"]:
+            if st.session_state.last_alert_action != sig["action"]:
+                st.toast(f"🚨 ALERT: {sig['action']} on {ticker} @ ${price:,.{price_decimals(price)}f}!", icon="⚡")
+                st.session_state.last_alert_action = sig["action"]
+
         last_bar_time = df.index[-1]
         try:
             age_sec = int((datetime.now(last_bar_time.tzinfo) - last_bar_time).total_seconds())
@@ -1072,6 +1094,35 @@ def render_dashboard():
             get_higher_tf_bias(ticker, include_247, trend_interval),
             help=f"EMA 9 versus EMA 20 trend confirmation on the selected {trend_interval} timeframe."
         )
+
+        # Adaptive model is trained only on closed paper trades with a saved entry snapshot.
+        adaptive_model = fit_adaptive_model(st.session_state.get("paper_trades", []), min_samples=20)
+        adaptive_side = "LONG" if sig["long_score"] >= sig["short_score"] else "SHORT"
+        adaptive_features = directional_learning_features(sig, adaptive_side)
+        adaptive_estimate = predict_adaptive_model(adaptive_model, adaptive_features)
+        with st.expander("🧠 Adaptive AI Strategy Assistant", expanded=False):
+            info_heading(
+                "Learns from your paper-trading results",
+                "A small local machine-learning model learns patterns from closed simulated trades you made in this session. It does not place orders, retrain on live market outcomes, or guarantee accuracy.",
+                4,
+            )
+            ai_a, ai_b, ai_c = st.columns(3)
+            ai_a.metric("Learning Trades", f"{adaptive_model['sample_count']}/{adaptive_model['min_samples']}")
+            ai_b.metric("Your Recorded Win Rate", f"{adaptive_model['win_rate'] * 100:.1f}%" if adaptive_model.get("win_rate") is not None else "—")
+            ai_c.metric("Model Status", "Learning" if not adaptive_model.get("active") else "Active")
+            if adaptive_estimate is None:
+                st.info(
+                    "The model is still learning. Close at least 20 paper trades with saved signal snapshots and include both wins and losses. "
+                    "Until then, the terminal uses its transparent rule-based technical score."
+                )
+            else:
+                st.metric(
+                    f"Experimental {adaptive_side} Pattern Estimate",
+                    f"{adaptive_estimate * 100:.1f}%",
+                    help="Model output trained on your own closed paper trades. It is an experimental pattern estimate, not a calibrated probability or a forecast."
+                )
+                st.caption("The model updates on the next dashboard refresh after you close additional paper trades. It only adjusts candidate ordering when technical scores tie; the underlying signal rules remain visible and unchanged. Use it as extra research, not as an automatic trading instruction.")
+            st.caption("Learning data stays in this Streamlit session. Restarting/clearing the session can remove the history; use the paper journal CSV export to keep a record.")
 
         if dash_mode == "Advanced (Pro)":
             info_heading("🔬 Advanced Pro Telemetry", "Additional technical readings: ATR measures volatility, volume versus average compares activity, and EMA spread shows trend separation.", 5)
@@ -1211,6 +1262,7 @@ def render_dashboard():
                 "exit": None,
                 "pnl": None,
                 "notes": f"Automatic Quick Execution LONG · risk budget ${long_calc['risk_budget']:.2f}",
+                "ai_features": directional_learning_features(sig, "LONG"),
             })
             st.rerun()
 
@@ -1235,6 +1287,7 @@ def render_dashboard():
                 "exit": None,
                 "pnl": None,
                 "notes": f"Automatic Quick Execution SHORT · risk budget ${short_calc['risk_budget']:.2f}",
+                "ai_features": directional_learning_features(sig, "SHORT"),
             })
             st.rerun()
 
@@ -1412,7 +1465,8 @@ def render_dashboard():
                         "ticker": manual_ticker, "side": manual_side,
                         "entry": float(manual_entry), "stop": float(manual_stop),
                         "target": float(manual_target), "shares": float(manual_qty),
-                        "status": "OPEN", "exit": None, "pnl": None, "notes": manual_notes
+                        "status": "OPEN", "exit": None, "pnl": None, "notes": manual_notes,
+                        "ai_features": directional_learning_features(sig, manual_side) if manual_ticker == ticker else None
                     })
                     st.session_state.paper_trades = normalized_records
                     st.success(f"{manual_side} paper position saved for {manual_ticker}.")
@@ -1478,8 +1532,14 @@ def render_dashboard():
             st.plotly_chart(eq, use_container_width=True)
             display_cols = [c for c in ["time", "closed_at", "ticker", "side", "entry", "exit", "stop", "target", "shares", "pnl", "notes"] if c in cdf.columns]
             st.dataframe(cdf[display_cols], use_container_width=True, hide_index=True)
+            csv_export = cdf.copy()
+            if "ai_features" in csv_export.columns:
+                import json
+                csv_export["ai_features"] = csv_export["ai_features"].apply(
+                    lambda value: json.dumps(value) if isinstance(value, dict) else ""
+                )
             csv_buffer = io.StringIO()
-            cdf.to_csv(csv_buffer, index=False)
+            csv_export.to_csv(csv_buffer, index=False)
             st.download_button("📥 Export Paper Journal (CSV)", csv_buffer.getvalue(), file_name=f"paper_trading_journal_{date.today()}.csv", mime="text/csv", key="export_paper_journal")
 
         if not normalized_records:
@@ -1508,14 +1568,12 @@ def render_dashboard():
 
 st.markdown("""
 <div class="terminal-hero">
-  <div class="terminal-kicker">Market intelligence · live monitoring · simulated execution</div>
+  <div class="terminal-kicker">Market-wide discovery · adaptive learning · simulated execution</div>
   <h1>⚡ PRO DAY TRADE TERMINAL</h1>
-  <p>A focused trading workspace with market candidates, multi-timeframe confirmation, risk planning and a built-in paper-trading journal.</p>
+  <p>A market-discovery trading workspace with multi-timeframe analysis, adaptive paper-trade learning, risk planning and simulated execution.</p>
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("---")
-render_buy_alert_monitor()
 st.markdown("---")
 render_dashboard()
 
