@@ -3,14 +3,10 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
 from plotly.subplots import make_subplots
-from datetime import datetime, date, time as dtime
+from datetime import datetime
 from zoneinfo import ZoneInfo
-import uuid
-import io
 import html
-from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 
 # ---------- Page Setup ----------
@@ -21,10 +17,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Modern Cyber-Terminal Dark Theme CSS with Fixes for Expanders and Form Contrast
+# ---------- Modern Cyber-Terminal Dark Theme CSS ----------
 st.markdown("""
 <style>
-/* TradingView-inspired terminal: quiet charcoal surfaces, restrained color, clear hierarchy. */
 :root {
   color-scheme: dark;
   --tv-bg: #131722;
@@ -54,35 +49,22 @@ header[data-testid="stHeader"] {
   background: rgba(19,23,34,.96) !important;
   border-bottom: 1px solid var(--tv-border);
 }
-[data-testid="stAppViewContainer"] > .main { background: var(--tv-bg) !important; }
 h1, h2, h3, h4, h5, h6 {
   color: var(--tv-strong) !important;
   letter-spacing: -.015em;
   font-weight: 650 !important;
 }
-h1 { font-size: clamp(1.55rem, 2.5vw, 2rem) !important; }
-h2 { font-size: 1.35rem !important; }
-h3 { font-size: 1.12rem !important; }
 p, li, label, legend, [data-testid="stMarkdownContainer"] { color: var(--tv-text); }
-[data-testid="stCaptionContainer"], .stCaption, small {
-  color: var(--tv-muted) !important;
-}
+[data-testid="stCaptionContainer"], .stCaption, small { color: var(--tv-muted) !important; }
 hr { border-color: var(--tv-border) !important; margin: 1rem 0 !important; }
 
-/* Sidebar and common panels */
+/* Sidebar */
 section[data-testid="stSidebar"] {
   background: var(--tv-panel) !important;
   border-right: 1px solid var(--tv-border);
 }
-section[data-testid="stSidebar"] > div { padding-top: 1rem; }
-section[data-testid="stSidebar"] h1,
-section[data-testid="stSidebar"] h2,
-section[data-testid="stSidebar"] h3 { color: var(--tv-strong) !important; }
-section[data-testid="stSidebar"] p,
-section[data-testid="stSidebar"] label,
-section[data-testid="stSidebar"] span { color: var(--tv-text) !important; }
 
-/* Inputs and select controls: dark surfaces even when focused or opened. */
+/* Inputs */
 .stTextInput input, .stNumberInput input, .stTextArea textarea,
 [data-baseweb="input"] input, [data-baseweb="textarea"] textarea,
 [data-baseweb="select"] > div, [data-baseweb="select"] input {
@@ -92,24 +74,7 @@ section[data-testid="stSidebar"] span { color: var(--tv-text) !important; }
   border: 1px solid #3a4050 !important;
   border-radius: 6px !important;
 }
-input::placeholder, textarea::placeholder {
-  color: #858c99 !important;
-  -webkit-text-fill-color: #858c99 !important;
-  opacity: 1 !important;
-}
-[data-baseweb="select"] > div:focus-within,
-[data-baseweb="input"]:focus-within,
-[data-baseweb="textarea"]:focus-within,
-.stTextInput input:focus, .stNumberInput input:focus,
-.stTextArea textarea:focus {
-  border-color: var(--tv-blue) !important;
-  box-shadow: 0 0 0 1px var(--tv-blue) !important;
-  background: #151c2b !important;
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-}
 [data-baseweb="popover"], [data-baseweb="menu"],
-[data-baseweb="popover"] *, [data-baseweb="menu"] *,
 [role="listbox"], [role="option"] {
   background: #1e222d !important;
   color: var(--tv-text) !important;
@@ -119,93 +84,33 @@ input::placeholder, textarea::placeholder {
   color: #ffffff !important;
 }
 
-/* Buttons: subdued default, blue primary, stable readable state after click. */
-.stButton > button, .stDownloadButton > button,
-[data-testid="stFormSubmitButton"] > button,
-[data-testid^="stBaseButton-"] {
+/* Buttons */
+.stButton > button, .stDownloadButton > button {
   min-height: 2.45rem;
   border-radius: 6px !important;
   border: 1px solid #3a4050 !important;
   background: #252a36 !important;
   color: var(--tv-text) !important;
-  -webkit-text-fill-color: var(--tv-text) !important;
   font-weight: 600 !important;
-  box-shadow: none !important;
-  opacity: 1 !important;
-  transition: background .12s ease, border-color .12s ease !important;
 }
-.stButton > button:hover, .stDownloadButton > button:hover,
-[data-testid="stFormSubmitButton"] > button:hover,
-[data-testid^="stBaseButton-"]:hover {
+.stButton > button:hover {
   background: #303747 !important;
   color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
   border-color: #65718a !important;
 }
-.stButton > button:focus-visible, .stDownloadButton > button:focus-visible,
-[data-testid="stFormSubmitButton"] > button:focus-visible,
-[data-testid^="stBaseButton-"]:focus-visible {
-  outline: 2px solid #6b94ff !important;
-  outline-offset: 2px !important;
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-}
-.stButton > button:active, .stDownloadButton > button:active,
-[data-testid="stFormSubmitButton"] > button:active,
-[data-testid^="stBaseButton-"]:active,
-.stButton > button[aria-pressed="true"] {
-  background: #35415b !important;
-  border-color: #7895e8 !important;
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-}
-.stButton > button:disabled, .stDownloadButton > button:disabled,
-[data-testid="stFormSubmitButton"] > button:disabled,
-[data-testid^="stBaseButton-"]:disabled {
-  background: #202532 !important;
-  border-color: #343a49 !important;
-  color: #858c99 !important;
-  -webkit-text-fill-color: #858c99 !important;
-  cursor: not-allowed !important;
-}
-.stButton > button[kind="primary"],
-.stButton > button[data-testid="stBaseButton-primary"],
-[data-testid="stBaseButton-primary"],
-[data-testid="stFormSubmitButton"] > button[kind="primary"] {
+.stButton > button[kind="primary"] {
   background: var(--tv-blue) !important;
   border-color: var(--tv-blue) !important;
   color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-}
-.stButton > button[kind="primary"]:hover,
-[data-testid="stBaseButton-primary"]:hover {
-  background: #1f53e5 !important;
-  border-color: #1f53e5 !important;
-}
-.stButton > button[kind="primary"]:active,
-.stButton > button[kind="primary"]:focus,
-[data-testid="stBaseButton-primary"]:active,
-[data-testid="stBaseButton-primary"]:focus {
-  background: #1947c7 !important;
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-}
-section[data-testid="stSidebar"] .stButton > button {
-  background: #252a36 !important;
-  color: var(--tv-text) !important;
-  -webkit-text-fill-color: var(--tv-text) !important;
 }
 
-/* Compact metric cards and data surfaces */
+/* Metric Cards */
 [data-testid="stMetric"] {
   background: var(--tv-panel) !important;
   border: 1px solid var(--tv-border) !important;
   border-radius: 7px !important;
   padding: 11px 13px !important;
-  box-shadow: none !important;
-  min-width: 0;
 }
-[data-testid="stMetric"] label,
 [data-testid="stMetric"] [data-testid="stMetricLabel"] {
   color: var(--tv-muted) !important;
   font-size: .8rem !important;
@@ -215,82 +120,21 @@ section[data-testid="stSidebar"] .stButton > button {
   font-size: clamp(1.05rem, 1.5vw, 1.4rem) !important;
   font-weight: 650 !important;
 }
-[data-testid="stMetric"] [data-testid="stMetricDelta"] { color: var(--tv-text) !important; }
-[data-testid="stDataFrame"], [data-testid="stDataEditor"],
-div[data-testid="stPlotlyChart"] {
-  width: 100%; max-width: 100%;
-}
-[data-testid="stDataFrame"], [data-testid="stDataEditor"] {
-  border: 1px solid var(--tv-border) !important;
-  border-radius: 7px !important;
-  overflow: hidden;
-}
-
-/* Expanders, tabs and selection controls remain charcoal when opened/selected. */
-[data-testid="stExpander"] {
-  background: var(--tv-panel) !important;
-  border: 1px solid var(--tv-border) !important;
-  border-radius: 7px !important;
-}
-[data-testid="stExpander"] summary,
-[data-testid="stExpander"] summary:hover,
-[data-testid="stExpander"] summary:focus,
-[data-testid="stExpander"] summary:active,
-[data-testid="stExpander"] details[open] > summary {
-  background: var(--tv-panel) !important;
-  color: var(--tv-strong) !important;
-  -webkit-text-fill-color: var(--tv-strong) !important;
-}
-[data-testid="stExpander"] details[open] > div,
-[data-testid="stExpander"] .streamlit-expanderContent,
-.streamlit-expanderContent {
-  background: var(--tv-panel) !important;
-  color: var(--tv-text) !important;
-  border-top: 1px solid var(--tv-border) !important;
-}
-[data-testid="stExpander"] [data-testid="stMarkdownContainer"] p,
-[data-testid="stExpander"] [data-testid="stMarkdownContainer"] li,
-[data-testid="stExpander"] [data-testid="stCaptionContainer"],
-[data-testid="stExpander"] label,
-[data-testid="stExpander"] h1,
-[data-testid="stExpander"] h2,
-[data-testid="stExpander"] h3,
-[data-testid="stExpander"] h4 {
-  color: var(--tv-text) !important;
-  -webkit-text-fill-color: var(--tv-text) !important;
-}
-[data-testid="stTabs"] [role="tab"],
-[data-testid="stTabs"] [role="tab"] *,
-[data-baseweb="tab"], [data-baseweb="tab"] * {
-  color: var(--tv-text) !important;
-  -webkit-text-fill-color: var(--tv-text) !important;
-}
-[data-testid="stTabs"] [role="tab"][aria-selected="true"],
-[data-baseweb="tab"][aria-selected="true"] {
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-  background: #252d3d !important;
-  border-bottom-color: var(--tv-blue) !important;
-}
-[data-testid="stRadio"] label, [data-testid="stCheckbox"] label,
-[data-testid="stToggle"] label, [role="radiogroup"] label {
-  color: var(--tv-text) !important;
+[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+  display: inline-flex !important;
+  padding: 2px 7px !important;
+  margin-top: 3px !important;
+  border: 1px solid #3b4658 !important;
+  border-radius: 5px !important;
+  background: #252c39 !important;
+  color: #dce5f2 !important;
+  font-weight: 600 !important;
 }
 
-/* Alerts, tooltips and custom information icons */
-[data-testid="stAlert"], [data-testid="stNotification"],
-[data-testid="stToast"], [data-testid="stDialog"], [role="dialog"] {
-  border-radius: 7px !important;
-}
-[data-testid="stDialog"], [role="dialog"],
-[data-testid="stPopoverBody"], [data-testid="stTooltipContent"], [role="tooltip"] {
-  background: var(--tv-panel) !important;
-  color: var(--tv-text) !important;
-  border-color: var(--tv-border) !important;
-}
+/* Custom Headings, Tooltips, Banners & Notices */
 .info-tip {
   display:inline-flex; align-items:center; justify-content:center;
-  width:16px; height:16px; margin-left:5px;
+  width:16px; height:16px; margin-left:6px;
   border:1px solid #59657a; border-radius:50%;
   color:#aab6ca; font-size:10px; font-weight:700;
   cursor:help; vertical-align:middle; position:relative;
@@ -299,153 +143,63 @@ div[data-testid="stPlotlyChart"] {
 .info-tip[title]:hover::after {
   content:attr(title); position:absolute; z-index:99999;
   left:50%; top:calc(100% + 7px); transform:translateX(-50%);
-  width:230px; white-space:normal; padding:9px 11px;
+  width:240px; white-space:normal; padding:9px 11px;
   border:1px solid #46536a; border-radius:6px;
   background:#1e222d; color:#d1d4dc; font-size:12px;
-  line-height:1.4; font-weight:400; box-shadow:0 5px 16px rgba(0,0,0,.35);
+  line-height:1.4; font-weight:400; box-shadow:0 5px 16px rgba(0,0,0,.45);
   pointer-events:none;
 }
-.terminal-kicker { color:#8b9bb8; text-transform:uppercase; letter-spacing:.12em; font-size:.7rem; font-weight:700; }
-.educational-disclaimer {
-  margin: 1rem 0 1.5rem;
-  padding: 1rem 1.1rem;
-  border: 1px solid #3a4050;
-  border-left: 3px solid #d6a84f;
-  border-radius: 8px;
-  background: #1e222d;
-  color: #d1d4dc !important;
-  line-height: 1.55;
-  font-size: .9rem;
+.terminal-kicker {
+  color:#8b9bb8; text-transform:uppercase; letter-spacing:.12em;
+  font-size:.72rem; font-weight:700;
 }
-.educational-disclaimer .disclaimer-heading {
-  color: #f0f3fa !important;
-  font-size: 1rem;
-  font-weight: 700;
-  margin-bottom: .45rem;
-}
-.educational-disclaimer,
-.educational-disclaimer * {
-  background-color: transparent;
-  color: #d1d4dc !important;
-  -webkit-text-fill-color: #d1d4dc !important;
-}
-.educational-disclaimer {
-  background: #1e222d !important;
-  border: 1px solid #3a4050 !important;
-  border-left: 3px solid #d6a84f !important;
-}
-.educational-disclaimer .disclaimer-heading {
-  background: transparent !important;
-  color: #e5c879 !important;
-  -webkit-text-fill-color: #e5c879 !important;
-}
-.educational-disclaimer p { margin: .3rem 0; }
-.educational-disclaimer strong {
-  color: #f0f3fa !important;
-  -webkit-text-fill-color: #f0f3fa !important;
-}
-
-/* Streamlit metric deltas carry the small percentage / return text. Keep them
-   on a dark pill with an explicit foreground so theme defaults cannot wash them out. */
-[data-testid="stMetric"] [data-testid="stMetricDelta"] {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: .25rem !important;
-  padding: 2px 7px !important;
-  margin-top: 3px !important;
-  border: 1px solid #3b4658 !important;
-  border-radius: 5px !important;
-  background: #252c39 !important;
-  color: #dce5f2 !important;
-  -webkit-text-fill-color: #dce5f2 !important;
-  opacity: 1 !important;
-  font-weight: 600 !important;
-}
-[data-testid="stMetric"] [data-testid="stMetricDelta"] *,
-[data-testid="stMetric"] [data-testid="stMetricDelta"] svg {
-  color: #dce5f2 !important;
-  fill: #dce5f2 !important;
-  -webkit-text-fill-color: #dce5f2 !important;
-  opacity: 1 !important;
-}
-
-/* Reusable, explicit dark notices for paper-trading and model-learning states. */
-.terminal-notice {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  margin: .55rem 0 .8rem;
-  padding: .75rem .9rem;
-  border: 1px solid #40506a;
-  border-left: 3px solid #6f9df5;
-  border-radius: 7px;
-  background: #222b3a !important;
-  color: #dce5f2 !important;
-  -webkit-text-fill-color: #dce5f2 !important;
-  line-height: 1.5;
-  font-size: .9rem;
-}
-.terminal-notice * {
-  background: transparent !important;
-  color: #dce5f2 !important;
-  -webkit-text-fill-color: #dce5f2 !important;
-}
-.terminal-notice-learning { border-left-color: #d6a84f; background: #302b20 !important; }
-.terminal-notice-learning, .terminal-notice-learning * { color: #f0dfb4 !important; -webkit-text-fill-color: #f0dfb4 !important; }
-.terminal-notice-position { border-left-color: #6f9df5; }
-
-/* Keep Streamlit's native info boxes readable in the same dark interface. */
-[data-testid="stAlert"] {
-  background: #222b3a !important;
-  border: 1px solid #40506a !important;
-  color: #dce5f2 !important;
-}
-[data-testid="stAlert"] *,
-[data-testid="stAlert"] [data-testid="stMarkdownContainer"] *,
-[data-testid="stAlert"] svg {
-  color: #dce5f2 !important;
-  fill: #dce5f2 !important;
-  -webkit-text-fill-color: #dce5f2 !important;
-  opacity: 1 !important;
-}
-
 .terminal-hero {
   padding: .9rem 1.1rem; margin:.15rem 0 .9rem;
   border:1px solid var(--tv-border); border-radius:8px;
-  background:var(--tv-panel); box-shadow:none;
+  background:var(--tv-panel);
 }
 .terminal-hero h1 { margin:.15rem 0 .25rem; font-size:clamp(1.45rem,2.4vw,1.9rem); }
 .terminal-hero p { margin:0; color:var(--tv-muted) !important; }
 .action-banner {
-  font-size:clamp(1.05rem,1.8vw,1.4rem); font-weight:750;
-  text-align:center; padding:10px 14px; border-radius:7px;
-  margin:10px 0 14px; letter-spacing:.02em; box-shadow:none;
+  font-size:clamp(1.05rem,1.8vw,1.35rem); font-weight:750;
+  text-align:center; padding:11px 14px; border-radius:7px;
+  margin:10px 0 14px; letter-spacing:.02em;
 }
 .buy { background:rgba(8,153,129,.16); color:#35c9ac; border:1px solid rgba(8,153,129,.55); }
 .short { background:rgba(242,54,69,.15); color:#ff6b78; border:1px solid rgba(242,54,69,.55); }
 .watch { background:rgba(41,98,255,.13); color:#83a7ff; border:1px solid rgba(41,98,255,.5); }
-@media (max-width: 1100px) {
-  div[data-testid="stHorizontalBlock"] { flex-wrap:wrap; gap:.7rem; }
-  div[data-testid="column"] { min-width:min(100%,220px) !important; }
+
+.terminal-notice {
+  margin: .55rem 0 .8rem; padding: .75rem .9rem;
+  border: 1px solid #40506a; border-left: 3px solid #6f9df5;
+  border-radius: 7px; background: #222b3a !important;
+  color: #dce5f2 !important; line-height: 1.5; font-size: .9rem;
 }
-@media (max-width: 700px) {
-  .block-container { padding-left:.65rem; padding-right:.65rem; }
-  .terminal-hero { padding:.75rem; }
-  [data-testid="stMetric"] { padding:9px !important; }
+.terminal-notice-learning { border-left-color: #d6a84f; background: #302b20 !important; color: #f0dfb4 !important; }
+
+.educational-disclaimer {
+  margin: 1.2rem 0 1.5rem; padding: 1rem 1.1rem;
+  border: 1px solid #3a4050; border-left: 3px solid #d6a84f;
+  border-radius: 8px; background: #1e222d !important;
+  color: #d1d4dc !important; line-height: 1.55; font-size: .88rem;
+}
+.educational-disclaimer .disclaimer-heading {
+  color: #e5c879 !important; font-size: .95rem; font-weight: 700; margin-bottom: .35rem;
 }
 </style>
 """, unsafe_allow_html=True)
 
-
+# ---------- UI Helper Functions ----------
 def info_heading(label, explanation, level=3):
-    """Render a compact heading with a hover-only explanation icon."""
-    safe_label = str(label).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    safe_tip = str(explanation).replace('&', '&amp;').replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
-    st.markdown(f'<h{level} style="margin:.35rem 0 .55rem">{safe_label}<span class="info-tip" title="{safe_tip}" aria-label="More information">i</span></h{level}>', unsafe_allow_html=True)
-
+    safe_label = html.escape(str(label))
+    safe_tip = html.escape(str(explanation), quote=True)
+    st.markdown(
+        f'<h{level} style="margin:.35rem 0 .55rem">{safe_label}'
+        f'<span class="info-tip" title="{safe_tip}" aria-label="More information">i</span></h{level}>',
+        unsafe_allow_html=True
+    )
 
 def render_terminal_notice(message, kind="info"):
-    """Render a high-contrast notice with a deliberately dark surface."""
     safe_message = html.escape(str(message))
     safe_kind = kind if kind in {"info", "learning", "position"} else "info"
     st.markdown(
@@ -453,123 +207,37 @@ def render_terminal_notice(message, kind="info"):
         unsafe_allow_html=True,
     )
 
-# ---------- Yahoo Finance symbol search / recommendations ----------
+# ---------- Universe & Search ----------
+ASSET_NAMES = {
+    "SPY": "SPDR S&P 500 ETF", "QQQ": "Invesco QQQ Trust", "IWM": "iShares Russell 2000 ETF",
+    "AAPL": "Apple Inc.", "MSFT": "Microsoft Corporation", "NVDA": "NVIDIA Corporation",
+    "AMD": "Advanced Micro Devices", "AMZN": "Amazon.com Inc.", "META": "Meta Platforms Inc.",
+    "GOOGL": "Alphabet Inc.", "TSLA": "Tesla Inc.", "PLTR": "Palantir Technologies",
+    "BTC-USD": "Bitcoin", "ETH-USD": "Ethereum", "SOL-USD": "Solana", "XRP-USD": "XRP",
+    "DOGE-USD": "Dogecoin", "AVAX-USD": "Avalanche", "LINK-USD": "Chainlink"
+}
+
 @st.cache_data(ttl=900, show_spinner=False)
 def search_stock_symbols(query):
-    """Search Yahoo Finance for equities, ETFs, and cryptocurrency pairs."""
     query = str(query or "").strip()
-    if len(query) < 1:
+    if not query:
         return []
     try:
-        result = yf.Search(query, max_results=50)
+        result = yf.Search(query, max_results=25)
         quotes = getattr(result, "quotes", []) or []
         matches = []
         for item in quotes:
-            quote_type = str(item.get("quoteType", "")).upper()
+            qtype = str(item.get("quoteType", "")).upper()
             symbol = str(item.get("symbol", "")).upper()
-            if symbol and quote_type in {"EQUITY", "ETF", "CRYPTOCURRENCY", "CRYPTO"}:
+            if symbol and qtype in {"EQUITY", "ETF", "CRYPTOCURRENCY", "CRYPTO"}:
                 matches.append({
                     "symbol": symbol,
                     "name": item.get("shortname") or item.get("longname") or ASSET_NAMES.get(symbol, symbol),
-                    "type": "CRYPTO" if quote_type in {"CRYPTOCURRENCY", "CRYPTO"} else quote_type
+                    "type": "CRYPTO" if "CRYPTO" in qtype else qtype
                 })
         return matches
     except Exception:
         return []
-
-ASSET_NAMES = {
-    "SPY": "SPDR S&P 500 ETF", "QQQ": "Invesco QQQ Trust", "IWM": "iShares Russell 2000 ETF",
-    "DIA": "SPDR Dow Jones Industrial Average ETF", "AAPL": "Apple Inc.", "MSFT": "Microsoft Corporation",
-    "NVDA": "NVIDIA Corporation", "AMD": "Advanced Micro Devices", "AMZN": "Amazon.com Inc.",
-    "META": "Meta Platforms Inc.", "GOOGL": "Alphabet Inc.", "TSLA": "Tesla Inc.",
-    "AVGO": "Broadcom Inc.", "NFLX": "Netflix Inc.", "JPM": "JPMorgan Chase & Co.",
-    "XOM": "Exxon Mobil Corporation", "LLY": "Eli Lilly and Company", "COST": "Costco Wholesale",
-    "PLTR": "Palantir Technologies", "ORCL": "Oracle Corporation",
-    "BTC-USD": "Bitcoin", "ETH-USD": "Ethereum", "SOL-USD": "Solana", "XRP-USD": "XRP",
-    "BNB-USD": "BNB", "DOGE-USD": "Dogecoin", "ADA-USD": "Cardano", "AVAX-USD": "Avalanche",
-    "LINK-USD": "Chainlink", "LTC-USD": "Litecoin", "BCH-USD": "Bitcoin Cash", "DOT-USD": "Polkadot",
-    "TRX-USD": "TRON", "SHIB-USD": "Shiba Inu", "TON-USD": "Toncoin", "XLM-USD": "Stellar",
-    "HBAR-USD": "Hedera", "SUI-USD": "Sui", "NEAR-USD": "NEAR Protocol", "UNI-USD": "Uniswap",
-    "ICP-USD": "Internet Computer", "ETC-USD": "Ethereum Classic", "ATOM-USD": "Cosmos",
-    "FIL-USD": "Filecoin", "APT-USD": "Aptos", "ARB-USD": "Arbitrum", "OP-USD": "Optimism",
-    "INJ-USD": "Injective", "IMX-USD": "Immutable", "STX-USD": "Stacks", "SEI-USD": "Sei",
-    "PEPE-USD": "Pepe", "RENDER-USD": "Render", "ALGO-USD": "Algorand", "XTZ-USD": "Tezos",
-    "EOS-USD": "EOS", "MKR-USD": "Maker", "AAVE-USD": "Aave", "GRT-USD": "The Graph",
-    "VET-USD": "VeChain", "MANA-USD": "Decentraland", "SAND-USD": "The Sandbox", "THETA-USD": "Theta Network",
-    "FET-USD": "Artificial Superintelligence Alliance", "RUNE-USD": "THORChain", "CRV-USD": "Curve DAO",
-    "LDO-USD": "Lido DAO", "JUP-USD": "Jupiter", "BONK-USD": "Bonk", "WIF-USD": "dogwifhat"
-}
-STOCK_RECOMMENDATION_UNIVERSE = [
-    "SPY", "QQQ", "IWM", "DIA", "AAPL", "MSFT", "NVDA", "AMD", "AMZN", "META",
-    "GOOGL", "TSLA", "AVGO", "NFLX", "JPM", "XOM", "LLY", "COST", "PLTR", "ORCL"
-]
-CRYPTO_RECOMMENDATION_UNIVERSE = [
-    "BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "BNB-USD", "DOGE-USD", "ADA-USD", "AVAX-USD",
-    "LINK-USD", "LTC-USD", "BCH-USD", "DOT-USD", "TRX-USD", "SHIB-USD", "TON-USD", "XLM-USD",
-    "HBAR-USD", "SUI-USD", "NEAR-USD", "UNI-USD", "ICP-USD", "ETC-USD", "ATOM-USD", "FIL-USD",
-    "APT-USD", "ARB-USD", "OP-USD", "INJ-USD", "IMX-USD", "STX-USD", "SEI-USD", "PEPE-USD",
-    "RENDER-USD", "ALGO-USD", "XTZ-USD", "EOS-USD", "MKR-USD", "AAVE-USD", "GRT-USD", "VET-USD",
-    "MANA-USD", "SAND-USD", "THETA-USD", "FET-USD", "RUNE-USD", "CRV-USD", "LDO-USD", "JUP-USD",
-    "BONK-USD", "WIF-USD"
-]
-RECOMMENDATION_UNIVERSE = STOCK_RECOMMENDATION_UNIVERSE + CRYPTO_RECOMMENDATION_UNIVERSE
-
-MARKET_STOCK_SCREENERS = (
-    "most_actives", "day_gainers", "day_losers", "small_cap_gainers",
-    "growth_technology_stocks", "most_shorted_stocks"
-)
-
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def discover_market_universe():
-    """Discover a broad rotating universe of Yahoo-listed equities, ETFs and crypto pairs."""
-    discovered = {}
-
-    def add_quote(item, forced_type=None):
-        if not isinstance(item, dict):
-            return
-        symbol = str(item.get("symbol") or "").upper().strip()
-        qtype = str(item.get("quoteType") or forced_type or "").upper()
-        if not symbol or qtype not in {"EQUITY", "ETF", "CRYPTO", "CRYPTOCURRENCY"}:
-            return
-        asset_type = "CRYPTO" if qtype in {"CRYPTO", "CRYPTOCURRENCY"} else qtype
-        discovered[symbol] = {
-            "symbol": symbol,
-            "name": item.get("shortName") or item.get("shortname") or item.get("longName") or item.get("longname") or ASSET_NAMES.get(symbol, symbol),
-            "type": asset_type,
-        }
-
-    for symbol in RECOMMENDATION_UNIVERSE:
-        discovered[symbol] = {
-            "symbol": symbol,
-            "name": ASSET_NAMES.get(symbol, symbol),
-            "type": "CRYPTO" if symbol.endswith("-USD") else "EQUITY",
-        }
-
-    if callable(getattr(yf, "screen", None)):
-        for screen_name in MARKET_STOCK_SCREENERS:
-            try:
-                response = yf.screen(screen_name, count=100)
-                quotes = response.get("quotes", []) if isinstance(response, dict) else []
-                for item in quotes:
-                    add_quote(item)
-            except Exception:
-                continue
-
-    for search_term in ("USD cryptocurrency", "crypto USD", "altcoins USD"):
-        try:
-            result = yf.Search(search_term, max_results=50)
-            for item in (getattr(result, "quotes", []) or []):
-                add_quote(item, forced_type="CRYPTOCURRENCY")
-        except Exception:
-            continue
-
-    return list(discovered.values())
-
-
-def display_asset_name(symbol):
-    return ASSET_NAMES.get(str(symbol).upper(), str(symbol).upper())
-
 
 def price_decimals(price):
     try:
@@ -577,97 +245,32 @@ def price_decimals(price):
     except (TypeError, ValueError):
         return 2
 
-
-def directional_price_move_pct(start_price, end_price, side="LONG"):
-    start_price = float(start_price)
-    end_price = float(end_price)
-    side = str(side).upper()
-    if not np.isfinite(start_price) or not np.isfinite(end_price) or start_price <= 0:
-        return 0.0
-    if side == "SHORT":
-        return (start_price - end_price) / start_price * 100.0
-    return (end_price - start_price) / start_price * 100.0
-
-
-def calculate_directional_percentages(current_price, entry, stop, target, side):
-    try:
-        current_price, entry, stop, target = map(float, (current_price, entry, stop, target))
-        side = str(side).upper()
-    except (TypeError, ValueError):
-        return {"valid": False, "reason": "Prices and side must be valid values."}
-    if (not all(np.isfinite(v) for v in (current_price, entry, stop, target))
-            or min(current_price, entry, stop, target) <= 0):
-        return {"valid": False, "reason": "All prices must be finite and above zero."}
-    if side == "LONG":
-        levels_valid = stop < entry < target
-        reward_pct = (target - entry) / entry * 100.0
-        risk_pct = (entry - stop) / entry * 100.0
-    elif side == "SHORT":
-        levels_valid = target < entry < stop
-        reward_pct = (entry - target) / entry * 100.0
-        risk_pct = (stop - entry) / entry * 100.0
-    else:
-        return {"valid": False, "reason": "Side must be LONG or SHORT."}
-    if not levels_valid:
-        return {"valid": False, "reason": "Price levels do not match the selected trade direction."}
-    return {
-        "valid": True,
-        "side": side,
-        "entry_vs_current_pct": (entry - current_price) / current_price * 100.0,
-        "target_vs_current_pct": (target - current_price) / current_price * 100.0,
-        "stop_vs_current_pct": (stop - current_price) / current_price * 100.0,
-        "reward_pct": reward_pct,
-        "risk_pct": risk_pct,
-        "reward_to_risk": reward_pct / risk_pct if risk_pct > 0 else 0.0,
-    }
-
-
-def paper_trade_return_pct(pnl, entry_price, quantity):
-    try:
-        pnl, entry_price, quantity = float(pnl), float(entry_price), float(quantity)
-    except (TypeError, ValueError):
-        return None
-    notional = entry_price * quantity
-    if not all(np.isfinite(v) for v in (pnl, entry_price, quantity)) or notional <= 0:
-        return None
-    return pnl / notional * 100.0
-
-
 def robinhood_asset_url(symbol):
     symbol = str(symbol or "").strip().upper()
     if not symbol:
         return "https://robinhood.com/"
     if symbol.endswith("-USD"):
-        asset_code = symbol[:-4]
-        return f"https://robinhood.com/us/en/crypto/{quote(asset_code.lower(), safe='')}/"
+        return f"https://robinhood.com/us/en/crypto/{quote(symbol[:-4].lower(), safe='')}/"
     return f"https://robinhood.com/us/en/stocks/{quote(symbol.lower(), safe='')}/"
 
-
+# ---------- Core Quantitative Math ----------
 def calculate_position_size(account_size, risk_fraction, entry, stop, target, is_crypto=False):
     try:
-        account = float(account_size)
-        risk_fraction = float(risk_fraction)
-        entry = float(entry)
-        stop = float(stop)
-        target = float(target)
+        account, risk_fraction, entry, stop, target = map(float, (account_size, risk_fraction, entry, stop, target))
     except (TypeError, ValueError):
-        return {"valid": False, "reason": "Enter valid numeric values for the account, entry, stop and target."}
+        return {"valid": False, "reason": "Enter valid numeric values."}
 
-    if not all(np.isfinite(v) for v in (account, risk_fraction, entry, stop, target)):
-        return {"valid": False, "reason": "All calculator values must be finite numbers."}
-    if account <= 0 or not 0 < risk_fraction <= 1 or entry <= 0 or stop <= 0 or target <= 0:
-        return {"valid": False, "reason": "Account, entry, stop and target must be above zero; risk must be between 0% and 100%."}
+    if account <= 0 or not (0 < risk_fraction <= 1) or min(entry, stop, target) <= 0:
+        return {"valid": False, "reason": "All prices/account must be > 0 and risk between 0% and 100%."}
 
     side = "LONG" if stop < entry < target else ("SHORT" if target < entry < stop else None)
     if side is None:
-        return {"valid": False, "reason": "LONG needs Stop < Entry < Target. SHORT needs Target < Entry < Stop."}
+        return {"valid": False, "reason": "LONG requires Stop < Entry < Target. SHORT requires Target < Entry < Stop."}
 
     stop_distance = abs(entry - stop)
     reward_distance = abs(target - entry)
     risk_budget = account * risk_fraction
-    risk_based_qty = risk_budget / stop_distance
-    buying_power_cap = account / entry
-    raw_qty = min(risk_based_qty, buying_power_cap)
+    raw_qty = min(risk_budget / stop_distance, account / entry)
 
     if is_crypto:
         quantity = float(np.floor(raw_qty * 1_000_000) / 1_000_000)
@@ -677,10 +280,9 @@ def calculate_position_size(account_size, risk_fraction, entry, stop, target, is
         unit = "shares"
 
     if quantity <= 0:
-        return {"valid": False, "reason": "The risk budget or account size is too small for one share/unit at these levels."}
+        return {"valid": False, "reason": "Risk budget or account size is too small for 1 share/unit."}
 
     planned_risk = quantity * stop_distance
-    potential_reward = quantity * reward_distance
     return {
         "valid": True,
         "side": side,
@@ -689,79 +291,290 @@ def calculate_position_size(account_size, risk_fraction, entry, stop, target, is
         "risk_budget": risk_budget,
         "planned_risk": planned_risk,
         "position_value": quantity * entry,
-        "potential_reward": potential_reward,
+        "potential_reward": quantity * reward_distance,
         "reward_to_risk": reward_distance / stop_distance,
-        "buying_power_cap": buying_power_cap,
         "risk_pct_used": (planned_risk / account) * 100,
-        "stop_distance": stop_distance,
     }
 
-
-def build_quick_trade_plan(signal, price, stop_gap, rr_ratio, side, digits=2):
-    side = str(side).upper()
-    if side not in {"LONG", "SHORT"}:
-        raise ValueError("side must be LONG or SHORT")
-    price = float(price)
-    stop_gap = max(float(stop_gap), price * 0.0025, 0.000001)
-    rr_ratio = float(rr_ratio)
-    if not np.isfinite(price) or price <= 0 or not np.isfinite(rr_ratio) or rr_ratio <= 0:
-        raise ValueError("price and reward-to-risk ratio must be positive finite numbers")
-
-    if signal.get("side") == side:
-        entry = float(signal["ideal_buy"])
-        stop = float(signal["stop"])
-        target = float(signal["ideal_sell"])
-    elif side == "LONG":
-        entry = price
-        stop = round(max(0.000001, entry - stop_gap), digits)
-        target = round(entry + stop_gap * rr_ratio, digits)
-    else:
-        entry = price
-        stop = round(entry + stop_gap, digits)
-        target = round(max(0.000001, entry - stop_gap * rr_ratio), digits)
-
-    valid_levels = (stop < entry < target) if side == "LONG" else (target < entry < stop)
-    if not valid_levels:
-        entry = price
-        if side == "LONG":
-            stop = round(max(0.000001, entry - stop_gap), digits)
-            target = round(entry + stop_gap * rr_ratio, digits)
-        else:
-            stop = round(entry + stop_gap, digits)
-            target = round(max(0.000001, entry - stop_gap * rr_ratio), digits)
-
-    return {"entry": float(entry), "stop": float(stop), "target": float(target), "side": side}
-
-
-AI_FEATURE_NAMES = (
-    "setup_strength", "vwap_alignment", "ema_alignment",
-    "momentum_alignment", "volume_confirmation"
-)
-
+AI_FEATURE_NAMES = ("setup_strength", "vwap_alignment", "ema_alignment", "momentum_alignment", "volume_confirmation")
 
 def directional_learning_features(signal, side):
-    side = str(side).upper()
-    if side not in {"LONG", "SHORT"}:
-        raise ValueError("side must be LONG or SHORT")
-    direction = 1.0 if side == "LONG" else -1.0
-    score = float(signal.get("long_score" if side == "LONG" else "short_score", 0.0))
+    direction = 1.0 if side.upper() == "LONG" else -1.0
+    score = float(signal.get("long_score" if direction > 0 else "short_score", 0.0))
     rsi = float(signal.get("rsi", 50.0))
     vwap_gap = float(signal.get("vwap_gap_pct", 0.0))
     ema_spread = float(signal.get("ema_spread_pct", 0.0))
     volume_ratio = float(signal.get("volume_ratio", 1.0))
-    clip = lambda value: float(np.clip(value, -1.0, 1.0))
+    clip = lambda v: float(np.clip(v, -1.0, 1.0))
     return {
         "setup_strength": clip((score / 5.0) * 2.0 - 1.0),
         "vwap_alignment": clip(direction * vwap_gap / 0.50),
         "ema_alignment": clip(direction * ema_spread / 0.30),
         "momentum_alignment": clip(direction * (rsi - 50.0) / 25.0),
-        "volume_confirmation": clip((volume_ratio - 1.0) / 1.50)
+        "volume_confirmation": clip((volume_ratio - 1.0) / 1.50),
     }
 
-
 def evaluate_perceptron_trade(features_dict, weights_dict, bias):
-    activation = float(bias)
-    for name in AI_FEATURE_NAMES:
-        activation += float(weights_dict.get(name, 0.0)) * float(features_dict.get(name, 0.0))
+    activation = float(bias) + sum(float(weights_dict.get(k, 0.0)) * float(features_dict.get(k, 0.0)) for k in AI_FEATURE_NAMES)
     probability = 1.0 / (1.0 + np.exp(-np.clip(activation, -30.0, 30.0)))
     return probability, activation
+
+# ---------- Market Data & Technical Engine ----------
+@st.cache_data(ttl=120, show_spinner=False)
+def fetch_intraday_data(symbol, period="5d", interval="5m"):
+    try:
+        df = yf.download(symbol, period=period, interval=interval, progress=False)
+        if df is None or df.empty:
+            return pd.DataFrame()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = df.dropna(subset=["Close", "High", "Low", "Open"]).copy()
+        df["EMA9"] = df["Close"].ewm(span=9, adjust=False).mean()
+        df["EMA21"] = df["Close"].ewm(span=21, adjust=False).mean()
+        typical_price = (df["High"] + df["Low"] + df["Close"]) / 3.0
+        cum_vol = df["Volume"].replace(0, np.nan).ffill().fillna(1).cumsum()
+        df["VWAP"] = (typical_price * df["Volume"]).cumsum() / cum_vol
+
+        delta = df["Close"].diff()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = gain / loss.replace(0, np.nan)
+        df["RSI"] = 100 - (100 / (1 + rs))
+        df["RSI"] = df["RSI"].fillna(50.0)
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+def analyze_signal(df, rr_ratio=2.0):
+    last = df.iloc[-1]
+    prev = df.iloc[-2] if len(df) > 1 else last
+    price = float(last["Close"])
+    ema9 = float(last["EMA9"])
+    ema21 = float(last["EMA21"])
+    vwap = float(last["VWAP"])
+    rsi = float(last["RSI"])
+    avg_vol = float(df["Volume"].tail(20).mean()) or 1.0
+    vol_ratio = float(last["Volume"]) / avg_vol
+
+    vwap_gap_pct = (price - vwap) / vwap * 100.0
+    ema_spread_pct = (ema9 - ema21) / ema21 * 100.0
+
+    long_score = sum([
+        price > vwap,
+        ema9 > ema21,
+        45 <= rsi <= 68,
+        vol_ratio >= 1.1,
+        price > float(prev["Close"])
+    ])
+    short_score = sum([
+        price < vwap,
+        ema9 < ema21,
+        32 <= rsi <= 55,
+        vol_ratio >= 1.1,
+        price < float(prev["Close"])
+    ])
+
+    atr = float((df["High"] - df["Low"]).tail(14).mean())
+    stop_gap = max(atr * 1.2, price * 0.003)
+    digits = price_decimals(price)
+
+    if long_score >= 3 and long_score > short_score:
+        side = "LONG"
+        stop = round(price - stop_gap, digits)
+        target = round(price + stop_gap * rr_ratio, digits)
+    elif short_score >= 3 and short_score > long_score:
+        side = "SHORT"
+        stop = round(price + stop_gap, digits)
+        target = round(price - stop_gap * rr_ratio, digits)
+    else:
+        side = "WATCH"
+        stop = round(price - stop_gap, digits)
+        target = round(price + stop_gap * rr_ratio, digits)
+
+    return {
+        "price": price, "prev_close": float(prev["Close"]),
+        "ema9": ema9, "ema21": ema21, "vwap": vwap, "rsi": rsi,
+        "volume_ratio": vol_ratio, "vwap_gap_pct": vwap_gap_pct,
+        "ema_spread_pct": ema_spread_pct, "long_score": long_score,
+        "short_score": short_score, "side": side,
+        "ideal_buy": round(price, digits), "stop": stop, "ideal_sell": target,
+        "stop_gap": stop_gap
+    }
+
+# ---------- Session State Initialization ----------
+if "paper_trades" not in st.session_state:
+    st.session_state.paper_trades = []
+if "ai_weights" not in st.session_state:
+    st.session_state.ai_weights = {k: 0.45 for k in AI_FEATURE_NAMES}
+    st.session_state.ai_bias = -0.15
+
+# ---------- Sidebar Controls ----------
+with st.sidebar:
+    st.markdown("### ⚡ Terminal Controls")
+    search_query = st.text_input("🔎 Search Ticker / Crypto", placeholder="e.g. NVDA, SPY, BTC-USD")
+    search_matches = search_stock_symbols(search_query) if search_query else []
+
+    quick_list = list(ASSET_NAMES.keys())
+    if search_matches:
+        options = [f"{m['symbol']} — {m['name']} ({m['type']})" for m in search_matches]
+        selected_label = st.selectbox("Search Results", options)
+        symbol = selected_label.split(" — ")[0].strip()
+    else:
+        symbol = st.selectbox("Active Watchlist", quick_list, index=quick_list.index("NVDA"))
+
+    col_tf1, col_tf2 = st.columns(2)
+    with col_tf1:
+        interval = st.selectbox("Timeframe", ["1m", "5m", "15m", "30m", "1h"], index=1)
+    with col_tf2:
+        period = st.selectbox("Lookback", ["1d", "5d", "1mo"], index=1)
+
+    st.divider()
+    st.markdown("### 🛡️ Risk Parameters")
+    account_size = st.number_input("Paper Account ($)", min_value=100.0, value=25000.0, step=500.0)
+    risk_pct = st.slider("Risk per Trade (%)", min_value=0.25, max_value=5.0, value=1.0, step=0.25)
+    rr_ratio = st.slider("Target R:R Ratio", min_value=1.0, max_value=5.0, value=2.0, step=0.25)
+
+    st.divider()
+    st.link_button("↗ Open Asset on Robinhood", robinhood_asset_url(symbol), use_container_width=True)
+
+# ---------- Main Terminal Header ----------
+now_est = datetime.now(ZoneInfo("America/New_York")).strftime("%I:%M:%S %p EST")
+asset_title = ASSET_NAMES.get(symbol, symbol)
+st.markdown(f"""
+<div class="terminal-hero">
+  <div class="terminal-kicker">⚡ INTRADAY EXECUTION & AI CONFLUENCE TERMINAL • {now_est}</div>
+  <h1>{html.escape(symbol)} — {html.escape(asset_title)}</h1>
+  <p>Real-time VWAP/EMA confluence, automated directional trade levels, and adaptive perceptron confidence scoring.</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ---------- Fetch & Analyze Data ----------
+df = fetch_intraday_data(symbol, period=period, interval=interval)
+
+if df.empty:
+    st.error(f"Unable to fetch intraday bars for **{symbol}**. Verify the ticker or try a different timeframe.")
+    st.stop()
+
+sig = analyze_signal(df, rr_ratio=rr_ratio)
+digits = price_decimals(sig["price"])
+price_delta_pct = (sig["price"] - sig["prev_close"]) / sig["prev_close"] * 100.0
+
+# ---------- Action Signal Banner ----------
+if sig["side"] == "LONG":
+    st.markdown(f'<div class="action-banner buy">🟢 BULLISH CONFLUENCE ({sig["long_score"]}/5) — LONG SETUP ACTIVE</div>', unsafe_allow_html=True)
+elif sig["side"] == "SHORT":
+    st.markdown(f'<div class="action-banner short">🔴 BEARISH CONFLUENCE ({sig["short_score"]}/5) — SHORT SETUP ACTIVE</div>', unsafe_allow_html=True)
+else:
+    st.markdown(f'<div class="action-banner watch">🔵 NEUTRAL / CHOP ({max(sig["long_score"], sig["short_score"])}/5) — WAIT FOR BREAKOUT</div>', unsafe_allow_html=True)
+
+# ---------- Top KPI Strip ----------
+m1, m2, m3, m4, m5 = st.columns(5)
+m1.metric("Last Price", f"${sig['price']:,.{digits}f}", f"{price_delta_pct:+.2f}%")
+m2.metric("Session VWAP", f"${sig['vwap']:,.{digits}f}", f"{sig['vwap_gap_pct']:+.2f}% vs VWAP")
+m3.metric("EMA 9 / 21 Spread", f"{sig['ema_spread_pct']:+.2f}%", "Bullish" if sig["ema9"] > sig["ema21"] else "Bearish")
+m4.metric("RSI (14)", f"{sig['rsi']:.1f}", "Overbought" if sig["rsi"] > 70 else ("Oversold" if sig["rsi"] < 30 else "Neutral"))
+m5.metric("Relative Volume", f"{sig['volume_ratio']:.2f}x", "High Activity" if sig["volume_ratio"] >= 1.2 else "Normal")
+
+# ---------- Interactive Price & Volume Chart ----------
+info_heading("Price Action, VWAP & EMA Ribbon", "Candlesticks overlaid with Session VWAP (amber), 9 EMA (cyan), and 21 EMA (purple).")
+
+plot_df = df.tail(90)
+fig = make_subplots(
+    rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.04,
+    row_heights=[0.76, 0.24]
+)
+
+fig.add_trace(go.Candlestick(
+    x=plot_df.index, open=plot_df["Open"], high=plot_df["High"],
+    low=plot_df["Low"], close=plot_df["Close"], name="Price",
+    increasing_line_color="#089981", decreasing_line_color="#f23645"
+), row=1, col=1)
+
+fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["VWAP"], name="VWAP", line=dict(color="#f5b041", width=1.8)), row=1, col=1)
+fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA9"], name="EMA 9", line=dict(color="#38bdf8", width=1.4)), row=1, col=1)
+fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA21"], name="EMA 21", line=dict(color="#c084fc", width=1.4)), row=1, col=1)
+
+# Horizontal levels for Entry, Stop, Target
+fig.add_hline(y=sig["ideal_buy"], line_dash="dot", line_color="#83a7ff", annotation_text="Entry", row=1, col=1)
+fig.add_hline(y=sig["stop"], line_dash="dash", line_color="#f23645", annotation_text="Stop", row=1, col=1)
+fig.add_hline(y=sig["ideal_sell"], line_dash="dash", line_color="#089981", annotation_text="Target", row=1, col=1)
+
+vol_colors = ["#089981" if c >= o else "#f23645" for c, o in zip(plot_df["Close"], plot_df["Open"])]
+fig.add_trace(go.Bar(x=plot_df.index, y=plot_df["Volume"], name="Volume", marker_color=vol_colors, opacity=0.7), row=2, col=1)
+
+fig.update_layout(
+    height=520, margin=dict(l=10, r=10, t=20, b=10),
+    paper_bgcolor="#131722", plot_bgcolor="#191d28",
+    font=dict(color="#d1d4dc"), xaxis_rangeslider_visible=False,
+    legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1)
+)
+fig.update_xaxes(gridcolor="#252a36", showgrid=True)
+fig.update_yaxes(gridcolor="#252a36", showgrid=True)
+st.plotly_chart(fig, use_container_width=True)
+
+# ---------- Lower Workspace: Position Sizer & AI Perceptron ----------
+col_left, col_right = st.columns([1.15, 1.0], gap="large")
+
+with col_left:
+    info_heading("🎯 Automated Trade Plan & Risk Calculator", "Sizes your position dynamically based on your sidebar risk budget and stop distance.")
+    is_crypto = symbol.endswith("-USD")
+    plan_side = "SHORT" if sig["side"] == "SHORT" else "LONG"
+
+    c1, c2, c3 = st.columns(3)
+    entry_in = c1.number_input("Entry Price ($)", value=float(sig["ideal_buy"]), format=f"%.{digits}f")
+    stop_in = c2.number_input("Stop Loss ($)", value=float(sig["stop"]), format=f"%.{digits}f")
+    target_in = c3.number_input("Profit Target ($)", value=float(sig["ideal_sell"]), format=f"%.{digits}f")
+
+    sizing = calculate_position_size(account_size, risk_pct / 100.0, entry_in, stop_in, target_in, is_crypto=is_crypto)
+
+    if sizing["valid"]:
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Position Size", f"{sizing['quantity']:,.4f} {sizing['unit']}" if is_crypto else f"{int(sizing['quantity'])} {sizing['unit']}", f"${sizing['position_value']:,.2f} Notional")
+        s2.metric("Planned Risk", f"${sizing['planned_risk']:,.2f}", f"{sizing['risk_pct_used']:.2f}% of Account")
+        s3.metric("Potential Reward", f"${sizing['potential_reward']:,.2f}", f"{sizing['reward_to_risk']:.2f}R Ratio")
+
+        if st.button("📝 Log Simulated Paper Trade", type="primary", use_container_width=True):
+            st.session_state.paper_trades.append({
+                "Time": now_est,
+                "Symbol": symbol,
+                "Side": sizing["side"],
+                "Qty": sizing["quantity"],
+                "Entry": entry_in,
+                "Stop": stop_in,
+                "Target": target_in,
+                "Risk ($)": round(sizing["planned_risk"], 2)
+            })
+            st.toast(f"Logged {sizing['side']} paper trade for {symbol}!")
+    else:
+        st.warning(sizing["reason"])
+
+with col_right:
+    info_heading("🧠 AI Perceptron Setup Confidence", "Evaluates normalized VWAP, EMA, RSI, and Volume alignment using adaptive weights.")
+    eval_side = "SHORT" if sig["side"] == "SHORT" else "LONG"
+    features = directional_learning_features(sig, eval_side)
+    prob, activation = evaluate_perceptron_trade(features, st.session_state.ai_weights, st.session_state.ai_bias)
+
+    p1, p2 = st.columns(2)
+    p1.metric(f"{eval_side} Win Probability", f"{prob * 100:.1f}%", f"Logit: {activation:+.2f}")
+    p2.metric("Confluence Score", f"{sig['long_score'] if eval_side == 'LONG' else sig['short_score']} / 5", "Technical Alignment")
+
+    feat_df = pd.DataFrame({
+        "Feature": [k.replace("_", " ").title() for k in features.keys()],
+        "Signal (-1 to +1)": [round(v, 2) for v in features.values()]
+    })
+    st.dataframe(feat_df, use_container_width=True, hide_index=True)
+    render_terminal_notice("AI confidence weights update dynamically as simulated paper trades are closed and reviewed.", kind="learning")
+
+# ---------- Paper Trade Blotter ----------
+if st.session_state.paper_trades:
+    st.divider()
+    info_heading("📒 Active Paper Trade Blotter", "Session-stored simulated positions.")
+    st.dataframe(pd.DataFrame(st.session_state.paper_trades), use_container_width=True, hide_index=True)
+
+# ---------- Footer Disclaimer ----------
+st.markdown("""
+<div class="educational-disclaimer">
+  <div class="disclaimer-heading">⚠️ Educational & Paper-Trading Disclaimer</div>
+  <p>This terminal is designed strictly for <strong>technical analysis education and paper-trading simulation</strong>. Intraday market data from Yahoo Finance may be delayed and does not constitute financial or investment advice.</p>
+</div>
+""", unsafe_allow_html=True)
