@@ -22,308 +22,311 @@ st.set_page_config(
 # Modern Cyber-Terminal Dark Theme CSS with Fixes for Expanders and Form Contrast
 st.markdown("""
 <style>
-:root {
-  --terminal-bg: #080c13;
-  --panel: #101824;
-  --panel-soft: #131e2c;
-  --line: #243247;
-  --muted: #91a2b8;
-  --text: #e8eef7;
-  --accent: #38bdf8;
-  --green: #20c997;
-  --red: #fb7185;
-}
-.stApp { background: radial-gradient(ellipse at 50% -18%, #17283d 0%, #0a101a 42%, var(--terminal-bg) 78%); color: var(--text); }
-.block-container { max-width: 1840px; padding: 1.15rem clamp(.85rem, 2vw, 2rem) 2.5rem; }
-header[data-testid="stHeader"] { background: rgba(8,12,19,.78); }
-[data-testid="stAppViewContainer"] > .main { background: transparent; }
-h1,h2,h3,h4 { color: #f4f8ff !important; letter-spacing: -.025em; }
-h1 { font-weight: 850 !important; }
-h2,h3 { font-weight: 750 !important; }
-p, label, .stMarkdown, .stCaption { overflow-wrap: anywhere; }
-.stCaption, [data-testid="stCaptionContainer"] { color: var(--muted) !important; }
-hr { border-color: #263449 !important; margin: 1.25rem 0 !important; }
-/* Sidebar */
-section[data-testid="stSidebar"] { background: linear-gradient(180deg,#101a28 0%,#0b111b 100%); border-right: 1px solid #263449; }
-section[data-testid="stSidebar"] > div { padding-top: 1.2rem; }
-section[data-testid="stSidebar"] h3 { color: #f2f7ff !important; }
-section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] span { color: #dce6f3 !important; }
-/* Inputs */
-.stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] > div,
-.stMultiSelect [data-baseweb="select"] > div, .stTextArea textarea {
-  background: #0b1320 !important; color: #edf5ff !important;
-  border: 1px solid #2a3b52 !important; border-radius: 9px !important;
-}
-[data-baseweb="popover"] { color: #eaf1fb; }
-/* Buttons */
-.stButton button, .stDownloadButton button {
-  border: 1px solid #344861; border-radius: 9px; font-weight: 650;
-  transition: border-color .16s ease, background .16s ease, transform .16s ease;
-  min-height: 2.55rem; white-space: normal;
-}
-.stButton button:hover, .stDownloadButton button:hover { border-color: #56b4e9; transform: translateY(-1px); }
-.stButton button[kind="primary"] { background: linear-gradient(135deg,#087cae,#155e9a); border-color: #269bd0; color: white; }
-section[data-testid="stSidebar"] .stButton button { background: #172438; color: #eaf2fc; border-color: #30445e; }
-/* Cards and metrics */
-div[data-testid="stMetric"] {
-  background: linear-gradient(145deg,rgba(20,32,48,.96),rgba(13,22,34,.96));
-  border: 1px solid #293b52; border-radius: 13px; padding: 13px 15px;
-  box-shadow: 0 7px 22px rgba(0,0,0,.18); min-width: 0; overflow-wrap: anywhere;
-}
-div[data-testid="stMetric"] label { color: #9fb1c8 !important; font-size: .82rem !important; }
-div[data-testid="stMetric"] [data-testid="stMetricValue"] { color: #f5f9ff !important; font-weight: 760; font-size: clamp(1.1rem,1.7vw,1.55rem) !important; }
-/* Data tables, charts, expanders */
-div[data-testid="stDataFrame"], div[data-testid="stPlotlyChart"] { width: 100%; max-width: 100%; }
-div[data-testid="stDataFrame"] { border: 1px solid #26364b; border-radius: 11px; overflow: hidden; }
-div[data-testid="stExpander"] { background: rgba(16,25,39,.88); border: 1px solid #293b52; border-radius: 11px; }
-div[data-testid="stExpander"] summary { color: #e8f0fb !important; font-weight: 650; }
-div[data-testid="stAlert"] { border-radius: 10px; }
-/* Signal banner */
-.action-banner { font-size: clamp(1.2rem,2.2vw,1.75rem); font-weight: 850; text-align: center; padding: 13px 16px; border-radius: 12px; margin: 12px 0 16px; letter-spacing: .035em; box-shadow: 0 8px 24px rgba(0,0,0,.24); }
-.buy { background: linear-gradient(110deg,#087f5b,#0c9b70); color: white; border: 1px solid #31c99a; }
-.short { background: linear-gradient(110deg,#a92c43,#d34257); color: white; border: 1px solid #fa7185; }
-.watch { background: linear-gradient(110deg,#174b82,#176ca5); color: white; border: 1px solid #3b9ed5; }
-/* Hover information icons */
-.info-tip { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; margin-left:5px; border:1px solid #4b7595; border-radius:50%; color:#8ed8ff; font-size:11px; font-weight:800; cursor:help; vertical-align:middle; position:relative; }
-.info-tip:hover { background:#12324a; border-color:#75cfff; color:#fff; }
-.info-tip[title]:hover::after { content:attr(title); position:absolute; z-index:99999; left:50%; top:calc(100% + 8px); transform:translateX(-50%); width:230px; white-space:normal; padding:9px 11px; border:1px solid #41617e; border-radius:8px; background:#101c2b; color:#eaf4ff; font-size:12px; line-height:1.4; font-weight:500; box-shadow:0 8px 22px rgba(0,0,0,.45); pointer-events:none; }
-/* Compact section labels */
-.terminal-kicker { color:#72c9f2; text-transform:uppercase; letter-spacing:.16em; font-size:.72rem; font-weight:800; }
-.terminal-hero { padding: 1.05rem 1.25rem; margin: .2rem 0 1rem; border:1px solid #2b4059; border-radius:15px; background:linear-gradient(115deg,rgba(20,40,62,.96),rgba(12,20,32,.96)); box-shadow:0 12px 30px rgba(0,0,0,.22); }
-.terminal-hero h1 { margin:.2rem 0 .25rem; font-size:clamp(1.55rem,3vw,2.25rem); }
-.terminal-hero p { margin:0; color:#a9bbd1; }
-@media (max-width: 1100px) {
-  div[data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap:.7rem; }
-  div[data-testid="column"] { min-width:min(100%,220px) !important; }
-}
-@media (max-width: 700px) {
-  .block-container { padding-left:.7rem; padding-right:.7rem; }
-  .terminal-hero { padding:.85rem; }
-  div[data-testid="stMetric"] { padding:10px; }
-}
-
-/* ---------- Global contrast and persistent button-state accessibility ---------- */
+/* TradingView-inspired terminal: quiet charcoal surfaces, restrained color, clear hierarchy. */
 :root {
   color-scheme: dark;
-  --terminal-text-strong: #f5f8ff;
-  --terminal-text: #e4edf8;
-  --terminal-text-muted: #b4c2d3;
-  --terminal-input-bg: #0b1422;
-  --terminal-button-bg: #1a2b40;
-  --terminal-button-hover: #25415f;
-  --terminal-button-active: #315776;
-  --terminal-button-border: #58718d;
+  --tv-bg: #131722;
+  --tv-panel: #1e222d;
+  --tv-panel-2: #191d28;
+  --tv-border: #2a2e39;
+  --tv-grid: #252a36;
+  --tv-text: #d1d4dc;
+  --tv-strong: #f0f3fa;
+  --tv-muted: #8b919e;
+  --tv-blue: #2962ff;
+  --tv-green: #089981;
+  --tv-red: #f23645;
 }
-html, body, .stApp, [data-testid="stAppViewContainer"],
-[data-testid="stMain"], [data-testid="stMainBlockContainer"] {
-  color: var(--terminal-text) !important;
+html, body, .stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"] {
+  background: var(--tv-bg) !important;
+  color: var(--tv-text) !important;
 }
-[data-testid="stMarkdownContainer"] p,
-[data-testid="stMarkdownContainer"] li,
-[data-testid="stMarkdownContainer"] blockquote,
-[data-testid="stCaptionContainer"],
-[data-testid="stHelp"] p,
-.stText, .stMarkdown, label, legend {
-  color: var(--terminal-text) !important;
+.block-container {
+  max-width: 1680px;
+  padding: 1rem clamp(.8rem, 1.5vw, 1.6rem) 2rem;
 }
-[data-testid="stCaptionContainer"], .stCaption,
-small, .muted, [data-testid="stWidgetLabel"] p {
-  color: var(--terminal-text-muted) !important;
+header[data-testid="stHeader"] {
+  background: rgba(19,23,34,.96) !important;
+  border-bottom: 1px solid var(--tv-border);
 }
-h1, h2, h3, h4, h5, h6,
-[data-testid="stMarkdownContainer"] strong,
-[data-testid="stMarkdownContainer"] b {
-  color: var(--terminal-text-strong) !important;
+[data-testid="stAppViewContainer"] > .main { background: var(--tv-bg) !important; }
+h1, h2, h3, h4, h5, h6 {
+  color: var(--tv-strong) !important;
+  letter-spacing: -.015em;
+  font-weight: 650 !important;
 }
-/* Sidebar: ensure widget labels and helper copy remain legible. */
-section[data-testid="stSidebar"],
-section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
-section[data-testid="stSidebar"] [data-testid="stWidgetLabel"],
-section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
-  color: var(--terminal-text) !important;
+h1 { font-size: clamp(1.55rem, 2.5vw, 2rem) !important; }
+h2 { font-size: 1.35rem !important; }
+h3 { font-size: 1.12rem !important; }
+p, li, label, legend, [data-testid="stMarkdownContainer"] { color: var(--tv-text); }
+[data-testid="stCaptionContainer"], .stCaption, small {
+  color: var(--tv-muted) !important;
 }
-section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
-  color: var(--terminal-text-muted) !important;
+hr { border-color: var(--tv-border) !important; margin: 1rem 0 !important; }
+
+/* Sidebar and common panels */
+section[data-testid="stSidebar"] {
+  background: var(--tv-panel) !important;
+  border-right: 1px solid var(--tv-border);
 }
-/* Inputs, selected values, placeholders and dropdown menus. */
+section[data-testid="stSidebar"] > div { padding-top: 1rem; }
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3 { color: var(--tv-strong) !important; }
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] span { color: var(--tv-text) !important; }
+
+/* Inputs and select controls: dark surfaces even when focused or opened. */
 .stTextInput input, .stNumberInput input, .stTextArea textarea,
 [data-baseweb="input"] input, [data-baseweb="textarea"] textarea,
 [data-baseweb="select"] > div, [data-baseweb="select"] input {
-  background-color: var(--terminal-input-bg) !important;
-  color: var(--terminal-text-strong) !important;
-  -webkit-text-fill-color: var(--terminal-text-strong) !important;
-  border-color: #526982 !important;
+  background: #111622 !important;
+  color: var(--tv-strong) !important;
+  -webkit-text-fill-color: var(--tv-strong) !important;
+  border: 1px solid #3a4050 !important;
+  border-radius: 6px !important;
 }
 input::placeholder, textarea::placeholder {
-  color: #aebed0 !important;
-  -webkit-text-fill-color: #aebed0 !important;
+  color: #858c99 !important;
+  -webkit-text-fill-color: #858c99 !important;
   opacity: 1 !important;
+}
+[data-baseweb="select"] > div:focus-within,
+[data-baseweb="input"]:focus-within,
+[data-baseweb="textarea"]:focus-within,
+.stTextInput input:focus, .stNumberInput input:focus,
+.stTextArea textarea:focus {
+  border-color: var(--tv-blue) !important;
+  box-shadow: 0 0 0 1px var(--tv-blue) !important;
+  background: #151c2b !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
 }
 [data-baseweb="popover"], [data-baseweb="menu"],
 [data-baseweb="popover"] *, [data-baseweb="menu"] *,
 [role="listbox"], [role="option"] {
-  background-color: #101c2b;
-  color: #f0f5fc !important;
+  background: #1e222d !important;
+  color: var(--tv-text) !important;
 }
 [role="option"]:hover, [role="option"][aria-selected="true"] {
-  background-color: #244563 !important;
+  background: #2a3142 !important;
   color: #ffffff !important;
 }
-/* All buttons retain readable contrast in default, hover, focus, pressed and disabled states. */
+
+/* Buttons: subdued default, blue primary, stable readable state after click. */
 .stButton > button, .stDownloadButton > button,
 [data-testid="stFormSubmitButton"] > button,
 [data-testid^="stBaseButton-"] {
-  color: #f5f8ff !important;
-  -webkit-text-fill-color: #f5f8ff !important;
-  background: linear-gradient(145deg, #1b3048, #142438) !important;
-  border: 1px solid var(--terminal-button-border) !important;
-  border-radius: 9px !important;
-  font-weight: 700 !important;
+  min-height: 2.45rem;
+  border-radius: 6px !important;
+  border: 1px solid #3a4050 !important;
+  background: #252a36 !important;
+  color: var(--tv-text) !important;
+  -webkit-text-fill-color: var(--tv-text) !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
   opacity: 1 !important;
-  text-shadow: none !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,.18) !important;
-  transition: background .14s ease, border-color .14s ease, box-shadow .14s ease !important;
+  transition: background .12s ease, border-color .12s ease !important;
 }
 .stButton > button:hover, .stDownloadButton > button:hover,
 [data-testid="stFormSubmitButton"] > button:hover,
 [data-testid^="stBaseButton-"]:hover {
+  background: #303747 !important;
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;
-  background: linear-gradient(145deg, #285276, #1b3d5c) !important;
-  border-color: #8bc9f2 !important;
-  box-shadow: 0 0 0 1px rgba(139,201,242,.18), 0 5px 14px rgba(0,0,0,.24) !important;
+  border-color: #65718a !important;
 }
-.stButton > button:focus, .stButton > button:focus-visible,
-.stDownloadButton > button:focus, .stDownloadButton > button:focus-visible,
+.stButton > button:focus-visible, .stDownloadButton > button:focus-visible,
 [data-testid="stFormSubmitButton"] > button:focus-visible,
 [data-testid^="stBaseButton-"]:focus-visible {
+  outline: 2px solid #6b94ff !important;
+  outline-offset: 2px !important;
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;
-  outline: 3px solid #8bd5ff !important;
-  outline-offset: 2px !important;
-  border-color: #a8e0ff !important;
 }
 .stButton > button:active, .stDownloadButton > button:active,
 [data-testid="stFormSubmitButton"] > button:active,
 [data-testid^="stBaseButton-"]:active,
 .stButton > button[aria-pressed="true"] {
+  background: #35415b !important;
+  border-color: #7895e8 !important;
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;
-  background: #315776 !important;
-  border-color: #a1d9ff !important;
-  box-shadow: inset 0 2px 5px rgba(0,0,0,.28) !important;
-  transform: none !important;
 }
 .stButton > button:disabled, .stDownloadButton > button:disabled,
 [data-testid="stFormSubmitButton"] > button:disabled,
 [data-testid^="stBaseButton-"]:disabled {
-  color: #c6d1df !important;
-  -webkit-text-fill-color: #c6d1df !important;
-  background: #263548 !important;
-  border-color: #52647a !important;
-  opacity: 1 !important;
+  background: #202532 !important;
+  border-color: #343a49 !important;
+  color: #858c99 !important;
+  -webkit-text-fill-color: #858c99 !important;
   cursor: not-allowed !important;
-  box-shadow: none !important;
 }
-/* Primary actions stay blue and visibly labelled after clicking. */
 .stButton > button[kind="primary"],
 .stButton > button[data-testid="stBaseButton-primary"],
 [data-testid="stBaseButton-primary"],
 [data-testid="stFormSubmitButton"] > button[kind="primary"] {
+  background: var(--tv-blue) !important;
+  border-color: var(--tv-blue) !important;
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;
-  background: linear-gradient(135deg, #087cae, #155e9a) !important;
-  border-color: #55b9e8 !important;
 }
 .stButton > button[kind="primary"]:hover,
 [data-testid="stBaseButton-primary"]:hover {
-  background: linear-gradient(135deg, #1098cb, #1976b8) !important;
-  border-color: #a3e4ff !important;
+  background: #1f53e5 !important;
+  border-color: #1f53e5 !important;
 }
 .stButton > button[kind="primary"]:active,
 .stButton > button[kind="primary"]:focus,
 [data-testid="stBaseButton-primary"]:active,
 [data-testid="stBaseButton-primary"]:focus {
+  background: #1947c7 !important;
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;
-  background: #176b9b !important;
-  border-color: #b5e8ff !important;
 }
 section[data-testid="stSidebar"] .stButton > button {
-  color: #f5f8ff !important;
-  -webkit-text-fill-color: #f5f8ff !important;
+  background: #252a36 !important;
+  color: var(--tv-text) !important;
+  -webkit-text-fill-color: var(--tv-text) !important;
 }
-/* Radio, checkbox, tabs and segmented controls: selected text stays high contrast. */
-[data-testid="stRadio"] label, [data-testid="stCheckbox"] label,
-[data-testid="stToggle"] label, [role="radiogroup"] label,
-[data-baseweb="tab"] p, [data-baseweb="tab"] span,
-[role="tab"] {
-  color: #eaf2fc !important;
+
+/* Compact metric cards and data surfaces */
+[data-testid="stMetric"] {
+  background: var(--tv-panel) !important;
+  border: 1px solid var(--tv-border) !important;
+  border-radius: 7px !important;
+  padding: 11px 13px !important;
+  box-shadow: none !important;
+  min-width: 0;
 }
-[role="tab"][aria-selected="true"], [data-baseweb="tab-highlight"] {
-  color: #ffffff !important;
-  border-color: #55b9e8 !important;
-}
-[data-testid="stAlert"] *, [data-testid="stNotification"] *,
-[data-testid="stToast"] *, [data-testid="stStatusWidget"] * {
-  color: inherit;
-}
-[data-testid="stAlert"] { color: #f3f7fc !important; }
-[data-testid="stExpander"] summary {
-  color: #eaf2fc !important;
-}
-/* Expanded sections may use a light/white content panel. Keep the familiar
-   dark expander header, but use dark ink inside the light content surface. */
-[data-testid="stExpander"] details[open] > div {
-  background-color: #f7f9fc !important;
-  color: #253247 !important;
-  border-top: 1px solid #d7e0eb !important;
-}
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"],
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] p,
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] li,
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] strong,
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] b,
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h1,
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h2,
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h3,
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h4,
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h5,
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h6,
-[data-testid="stExpander"] details[open] > div [data-testid="stCaptionContainer"],
-[data-testid="stExpander"] details[open] > div .stCaption,
-[data-testid="stExpander"] details[open] > div [data-testid="stWidgetLabel"],
-[data-testid="stExpander"] details[open] > div label,
-[data-testid="stExpander"] details[open] > div legend {
-  color: #253247 !important;
-  -webkit-text-fill-color: #253247 !important;
-}
-[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] a {
-  color: #075985 !important;
-  -webkit-text-fill-color: #075985 !important;
-}
-[data-testid="stExpander"] details[open] > div .stButton > button,
-[data-testid="stExpander"] details[open] > div .stDownloadButton > button,
-[data-testid="stExpander"] details[open] > div [data-testid="stFormSubmitButton"] > button {
-  color: #f5f8ff !important;
-  -webkit-text-fill-color: #f5f8ff !important;
-}
-/* Data editors and dataframe headers use explicit light text on dark cells. */
-[data-testid="stDataFrame"], [data-testid="stDataEditor"] {
-  color: #f0f5fc !important;
-  border-color: #465b73 !important;
-}
+[data-testid="stMetric"] label,
 [data-testid="stMetric"] [data-testid="stMetricLabel"] {
-  color: #bdcad9 !important;
+  color: var(--tv-muted) !important;
+  font-size: .8rem !important;
 }
 [data-testid="stMetric"] [data-testid="stMetricValue"] {
-  color: #ffffff !important;
+  color: var(--tv-strong) !important;
+  font-size: clamp(1.05rem, 1.5vw, 1.4rem) !important;
+  font-weight: 650 !important;
 }
-/* Custom hover help is readable and remains above neighbouring panels. */
+[data-testid="stMetric"] [data-testid="stMetricDelta"] { color: var(--tv-text) !important; }
+[data-testid="stDataFrame"], [data-testid="stDataEditor"],
+div[data-testid="stPlotlyChart"] {
+  width: 100%; max-width: 100%;
+}
+[data-testid="stDataFrame"], [data-testid="stDataEditor"] {
+  border: 1px solid var(--tv-border) !important;
+  border-radius: 7px !important;
+  overflow: hidden;
+}
+
+/* Expanders, tabs and selection controls remain charcoal when opened/selected. */
+[data-testid="stExpander"] {
+  background: var(--tv-panel) !important;
+  border: 1px solid var(--tv-border) !important;
+  border-radius: 7px !important;
+}
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary:hover,
+[data-testid="stExpander"] summary:focus,
+[data-testid="stExpander"] summary:active,
+[data-testid="stExpander"] details[open] > summary {
+  background: var(--tv-panel) !important;
+  color: var(--tv-strong) !important;
+  -webkit-text-fill-color: var(--tv-strong) !important;
+}
+[data-testid="stExpander"] details[open] > div,
+[data-testid="stExpander"] .streamlit-expanderContent,
+.streamlit-expanderContent {
+  background: var(--tv-panel) !important;
+  color: var(--tv-text) !important;
+  border-top: 1px solid var(--tv-border) !important;
+}
+[data-testid="stExpander"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stExpander"] [data-testid="stMarkdownContainer"] li,
+[data-testid="stExpander"] [data-testid="stCaptionContainer"],
+[data-testid="stExpander"] label,
+[data-testid="stExpander"] h1,
+[data-testid="stExpander"] h2,
+[data-testid="stExpander"] h3,
+[data-testid="stExpander"] h4 {
+  color: var(--tv-text) !important;
+  -webkit-text-fill-color: var(--tv-text) !important;
+}
+[data-testid="stTabs"] [role="tab"],
+[data-testid="stTabs"] [role="tab"] *,
+[data-baseweb="tab"], [data-baseweb="tab"] * {
+  color: var(--tv-text) !important;
+  -webkit-text-fill-color: var(--tv-text) !important;
+}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"],
+[data-baseweb="tab"][aria-selected="true"] {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  background: #252d3d !important;
+  border-bottom-color: var(--tv-blue) !important;
+}
+[data-testid="stRadio"] label, [data-testid="stCheckbox"] label,
+[data-testid="stToggle"] label, [role="radiogroup"] label {
+  color: var(--tv-text) !important;
+}
+
+/* Alerts, tooltips and custom information icons */
+[data-testid="stAlert"], [data-testid="stNotification"],
+[data-testid="stToast"], [data-testid="stDialog"], [role="dialog"] {
+  border-radius: 7px !important;
+}
+[data-testid="stDialog"], [role="dialog"],
+[data-testid="stPopoverBody"], [data-testid="stTooltipContent"], [role="tooltip"] {
+  background: var(--tv-panel) !important;
+  color: var(--tv-text) !important;
+  border-color: var(--tv-border) !important;
+}
+.info-tip {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:16px; height:16px; margin-left:5px;
+  border:1px solid #59657a; border-radius:50%;
+  color:#aab6ca; font-size:10px; font-weight:700;
+  cursor:help; vertical-align:middle; position:relative;
+}
+.info-tip:hover { background:#273247; border-color:#8294b4; color:#ffffff; }
 .info-tip[title]:hover::after {
-  background: #101c2b !important;
-  color: #f5f8ff !important;
-  border-color: #79bfe8 !important;
+  content:attr(title); position:absolute; z-index:99999;
+  left:50%; top:calc(100% + 7px); transform:translateX(-50%);
+  width:230px; white-space:normal; padding:9px 11px;
+  border:1px solid #46536a; border-radius:6px;
+  background:#1e222d; color:#d1d4dc; font-size:12px;
+  line-height:1.4; font-weight:400; box-shadow:0 5px 16px rgba(0,0,0,.35);
+  pointer-events:none;
+}
+.terminal-kicker { color:#8b9bb8; text-transform:uppercase; letter-spacing:.12em; font-size:.7rem; font-weight:700; }
+.terminal-hero {
+  padding: .9rem 1.1rem; margin:.15rem 0 .9rem;
+  border:1px solid var(--tv-border); border-radius:8px;
+  background:var(--tv-panel); box-shadow:none;
+}
+.terminal-hero h1 { margin:.15rem 0 .25rem; font-size:clamp(1.45rem,2.4vw,1.9rem); }
+.terminal-hero p { margin:0; color:var(--tv-muted) !important; }
+.action-banner {
+  font-size:clamp(1.05rem,1.8vw,1.4rem); font-weight:750;
+  text-align:center; padding:10px 14px; border-radius:7px;
+  margin:10px 0 14px; letter-spacing:.02em; box-shadow:none;
+}
+.buy { background:rgba(8,153,129,.16); color:#35c9ac; border:1px solid rgba(8,153,129,.55); }
+.short { background:rgba(242,54,69,.15); color:#ff6b78; border:1px solid rgba(242,54,69,.55); }
+.watch { background:rgba(41,98,255,.13); color:#83a7ff; border:1px solid rgba(41,98,255,.5); }
+@media (max-width: 1100px) {
+  div[data-testid="stHorizontalBlock"] { flex-wrap:wrap; gap:.7rem; }
+  div[data-testid="column"] { min-width:min(100%,220px) !important; }
+}
+@media (max-width: 700px) {
+  .block-container { padding-left:.65rem; padding-right:.65rem; }
+  .terminal-hero { padding:.75rem; }
+  [data-testid="stMetric"] { padding:9px !important; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1821,59 +1824,70 @@ def render_dashboard():
             fig.add_trace(go.Candlestick(
                 x=plot_df.index, open=plot_df["Open"], high=plot_df["High"], low=plot_df["Low"], close=plot_df["Close"],
                 name="Price",
-                increasing_line_color="#10b981", decreasing_line_color="#ef4444",
-                increasing_fillcolor="#10b981", decreasing_fillcolor="#ef4444"
+                increasing_line_color="#089981", decreasing_line_color="#f23645",
+                increasing_fillcolor="#089981", decreasing_fillcolor="#f23645"
             ), row=1, col=1)
         else:
             fig.add_trace(go.Scatter(
                 x=plot_df.index, y=plot_df["Close"],
                 name="Close Price",
-                line=dict(color="#3b82f6", width=2.5)
+                line=dict(color="#4c8dff", width=2.2)
             ), row=1, col=1)
 
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["VWAP"], name="VWAP", line=dict(color="#fbbf24", width=2)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA9"], name="EMA 9", line=dict(color="#f97316", width=1.3)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA20"], name="EMA 20", line=dict(color="#a855f7", width=1.3)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["VWAP"], name="VWAP", line=dict(color="#4da3ff", width=1.7)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA9"], name="EMA 9", line=dict(color="#f0b90b", width=1.2)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA20"], name="EMA 20", line=dict(color="#9b8cff", width=1.2)), row=1, col=1)
 
-        buy_signals = plot_df[plot_df["Signal"] == "BUY"]
-        sell_signals = plot_df[plot_df["Signal"] == "SELL"]
+        # Draw a marker only when the signal changes into BUY or SELL. This keeps
+        # the chart clean while making each new setup easy to spot.
+        prior_signal = plot_df["Signal"].shift(1).fillna("HOLD")
+        buy_signals = plot_df[(plot_df["Signal"] == "BUY") & (prior_signal != "BUY")]
+        sell_signals = plot_df[(plot_df["Signal"] == "SELL") & (prior_signal != "SELL")]
 
         if not buy_signals.empty:
+            buy_marker_y = buy_signals["Low"] - buy_signals["ATR"].fillna(0) * 0.18
             fig.add_trace(go.Scatter(
-                x=buy_signals.index, y=buy_signals["Low"] * 0.998,
-                mode="markers",
-                marker=dict(symbol="triangle-up", size=13, color="#10b981", line=dict(width=1, color="white")),
-                name="Buy Marker"
+                x=buy_signals.index, y=buy_marker_y,
+                mode="markers+text", text=["BUY"] * len(buy_signals),
+                textposition="bottom center",
+                textfont=dict(color="#35c9ac", size=10, family="Arial, sans-serif"),
+                marker=dict(symbol="triangle-up", size=14, color="#089981", line=dict(width=1, color="#d1d4dc")),
+                name="BUY signal", hovertemplate="BUY signal<br>%{x}<br>Level: %{y:.4f}<extra></extra>"
             ), row=1, col=1)
 
         if not sell_signals.empty:
+            sell_marker_y = sell_signals["High"] + sell_signals["ATR"].fillna(0) * 0.18
             fig.add_trace(go.Scatter(
-                x=sell_signals.index, y=sell_signals["High"] * 1.002,
-                mode="markers",
-                marker=dict(symbol="triangle-down", size=13, color="#ef4444", line=dict(width=1, color="white")),
-                name="Sell Marker"
+                x=sell_signals.index, y=sell_marker_y,
+                mode="markers+text", text=["SELL"] * len(sell_signals),
+                textposition="top center",
+                textfont=dict(color="#ff6b78", size=10, family="Arial, sans-serif"),
+                marker=dict(symbol="triangle-down", size=14, color="#f23645", line=dict(width=1, color="#d1d4dc")),
+                name="SELL signal", hovertemplate="SELL signal<br>%{x}<br>Level: %{y:.4f}<extra></extra>"
             ), row=1, col=1)
 
         fig.add_hline(y=sig["ideal_buy"], line_dash="dot", line_color="#10b981", annotation_text=f"Ideal Buy ${sig['ideal_buy']:,.{ticker_digits}f}", row=1, col=1)
         fig.add_hline(y=sig["ideal_sell"], line_dash="dot", line_color="#ef4444", annotation_text=f"Ideal Sell ${sig['ideal_sell']:,.{ticker_digits}f}", row=1, col=1)
         fig.add_hline(y=sig["hourly_target"], line_dash="dash", line_color="#06b6d4", annotation_text=f"1H Target ${sig['hourly_target']:,.{ticker_digits}f}", row=1, col=1)
 
-        bar_colors = ["#10b981" if c >= o else "#ef4444" for c, o in zip(plot_df["Close"], plot_df["Open"])]
+        bar_colors = ["#089981" if c >= o else "#f23645" for c, o in zip(plot_df["Close"], plot_df["Open"])]
         fig.add_trace(go.Bar(x=plot_df.index, y=plot_df["Volume"], name="Volume", marker_color=bar_colors, opacity=0.6), row=2, col=1)
 
         fig.update_layout(
-            height=560,
+            height=610,
             autosize=True,
-            paper_bgcolor="#121824",
-            plot_bgcolor="#121824",
-            font=dict(color="#f8fafc"),
-            margin=dict(l=0, r=10, t=10, b=0),
+            paper_bgcolor="#131722",
+            plot_bgcolor="#131722",
+            font=dict(color="#d1d4dc", family="Arial, sans-serif", size=11),
+            margin=dict(l=8, r=12, t=22, b=8),
             xaxis_rangeslider_visible=False,
             showlegend=True,
-            legend=dict(orientation="h", y=1.02, x=0, bgcolor="rgba(0,0,0,0)"),
-            xaxis=dict(gridcolor="#1e293b", type="category", nticks=10),
-            yaxis=dict(gridcolor="#1e293b", side="right"),
-            yaxis2=dict(gridcolor="#1e293b", side="right"),
+            hovermode="x unified",
+            legend=dict(orientation="h", y=1.04, x=0, bgcolor="rgba(19,23,34,0.75)", font=dict(color="#aeb5c2", size=10)),
+            xaxis=dict(gridcolor="#252a36", linecolor="#363c4e", tickfont=dict(color="#8b919e"), type="category", nticks=10, zeroline=False),
+            yaxis=dict(gridcolor="#252a36", linecolor="#363c4e", tickfont=dict(color="#8b919e"), side="right", zeroline=False),
+            yaxis2=dict(gridcolor="#252a36", linecolor="#363c4e", tickfont=dict(color="#8b919e"), side="right", zeroline=False),
+            dragmode="pan",
         )
         st.plotly_chart(
             fig, 
