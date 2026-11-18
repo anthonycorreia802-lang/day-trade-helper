@@ -269,9 +269,44 @@ section[data-testid="stSidebar"] .stButton > button {
   color: inherit;
 }
 [data-testid="stAlert"] { color: #f3f7fc !important; }
-[data-testid="stExpander"] summary,
-[data-testid="stExpander"] [data-testid="stMarkdownContainer"] {
+[data-testid="stExpander"] summary {
   color: #eaf2fc !important;
+}
+/* Expanded sections may use a light/white content panel. Keep the familiar
+   dark expander header, but use dark ink inside the light content surface. */
+[data-testid="stExpander"] details[open] > div {
+  background-color: #f7f9fc !important;
+  color: #253247 !important;
+  border-top: 1px solid #d7e0eb !important;
+}
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"],
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] p,
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] li,
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] strong,
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] b,
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h1,
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h2,
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h3,
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h4,
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h5,
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] h6,
+[data-testid="stExpander"] details[open] > div [data-testid="stCaptionContainer"],
+[data-testid="stExpander"] details[open] > div .stCaption,
+[data-testid="stExpander"] details[open] > div [data-testid="stWidgetLabel"],
+[data-testid="stExpander"] details[open] > div label,
+[data-testid="stExpander"] details[open] > div legend {
+  color: #253247 !important;
+  -webkit-text-fill-color: #253247 !important;
+}
+[data-testid="stExpander"] details[open] > div [data-testid="stMarkdownContainer"] a {
+  color: #075985 !important;
+  -webkit-text-fill-color: #075985 !important;
+}
+[data-testid="stExpander"] details[open] > div .stButton > button,
+[data-testid="stExpander"] details[open] > div .stDownloadButton > button,
+[data-testid="stExpander"] details[open] > div [data-testid="stFormSubmitButton"] > button {
+  color: #f5f8ff !important;
+  -webkit-text-fill-color: #f5f8ff !important;
 }
 /* Data editors and dataframe headers use explicit light text on dark cells. */
 [data-testid="stDataFrame"], [data-testid="stDataEditor"] {
@@ -289,198 +324,6 @@ section[data-testid="stSidebar"] .stButton > button {
   background: #101c2b !important;
   color: #f5f8ff !important;
   border-color: #79bfe8 !important;
-}
-
-/* ---------- Final interaction-surface hardening ----------
-   Streamlit expanders and BaseWeb controls can inherit a light pressed/expanded
-   surface from their component defaults. Keep every interaction surface dark. */
-[data-testid="stExpander"],
-[data-testid="stExpander"] details,
-[data-testid="stExpander"] details[open],
-[data-testid="stExpander"] .streamlit-expanderContent,
-.streamlit-expanderContent {
-  background: #101b2a !important;
-  color: #eaf2fc !important;
-  border-color: #344a62 !important;
-}
-[data-testid="stExpander"] details > summary,
-[data-testid="stExpander"] details[open] > summary,
-[data-testid="stExpander"] summary,
-[data-testid="stExpander"] summary:hover,
-[data-testid="stExpander"] summary:active,
-[data-testid="stExpander"] summary:focus,
-[data-testid="stExpander"] summary:focus-visible,
-.streamlit-expanderHeader,
-.streamlit-expanderHeader:hover,
-.streamlit-expanderHeader:focus,
-.streamlit-expanderHeader:active {
-  background: #17283b !important;
-  background-color: #17283b !important;
-  color: #f5f8ff !important;
-  -webkit-text-fill-color: #f5f8ff !important;
-  border-color: #526b86 !important;
-  box-shadow: none !important;
-}
-[data-testid="stExpander"] details[open] > summary,
-[data-testid="stExpander"] details[open] > summary:hover,
-[data-testid="stExpander"] details[open] > summary:focus {
-  background: #1d354d !important;
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-  border-bottom: 1px solid #47617c !important;
-}
-[data-testid="stExpander"] summary *,
-[data-testid="stExpander"] summary svg,
-[data-testid="stExpander"] summary p,
-[data-testid="stExpander"] summary span,
-.streamlit-expanderHeader * {
-  color: #f5f8ff !important;
-  -webkit-text-fill-color: #f5f8ff !important;
-  fill: #d9e9f8 !important;
-}
-[data-testid="stExpander"] details > div,
-[data-testid="stExpander"] details[open] > div {
-  background: #101b2a !important;
-  color: #eaf2fc !important;
-}
-[data-testid="stExpander"] [data-testid="stMarkdownContainer"] p,
-[data-testid="stExpander"] [data-testid="stMarkdownContainer"] li,
-[data-testid="stExpander"] [data-testid="stCaptionContainer"] {
-  color: #d8e4f2 !important;
-}
-
-/* Buttons: retain the dark/high-contrast state after Streamlit reruns. */
-.stButton button,
-.stDownloadButton button,
-[data-testid="stFormSubmitButton"] button,
-[data-testid^="stBaseButton-"] button,
-button[kind="secondary"], button[kind="primary"] {
-  color: #f5f8ff !important;
-  -webkit-text-fill-color: #f5f8ff !important;
-  caret-color: #f5f8ff !important;
-}
-.stButton button:focus:not(:focus-visible),
-.stDownloadButton button:focus:not(:focus-visible),
-[data-testid="stFormSubmitButton"] button:focus:not(:focus-visible) {
-  outline: none !important;
-  box-shadow: 0 0 0 2px rgba(139,213,255,.35) !important;
-}
-.stButton button[aria-expanded="true"],
-.stButton button[aria-pressed="true"],
-.stButton button[aria-selected="true"] {
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-  background: #244665 !important;
-  border-color: #8bd5ff !important;
-}
-
-/* Tabs and segmented controls: selected/focused tabs never turn white-on-white. */
-[data-baseweb="tab"],
-[data-baseweb="tab"] p,
-[data-baseweb="tab"] span,
-[role="tab"],
-[role="tab"] *,
-[data-testid="stTabs"] button {
-  color: #eaf2fc !important;
-  -webkit-text-fill-color: #eaf2fc !important;
-}
-[data-baseweb="tab"]:hover,
-[data-baseweb="tab"]:focus,
-[data-baseweb="tab"]:focus-visible,
-[data-baseweb="tab"][aria-selected="true"],
-[role="tab"][aria-selected="true"],
-[data-testid="stTabs"] button[aria-selected="true"] {
-  background: #1b3046 !important;
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-  border-color: #69c5f2 !important;
-}
-[data-baseweb="button-group"] button,
-[data-baseweb="button-group"] button:hover,
-[data-baseweb="button-group"] button:focus,
-[data-baseweb="button-group"] button[aria-pressed="true"] {
-  color: #f5f8ff !important;
-  -webkit-text-fill-color: #f5f8ff !important;
-  background-color: #1a2b40 !important;
-  border-color: #58718d !important;
-}
-[data-baseweb="button-group"] button[aria-pressed="true"] {
-  background-color: #244665 !important;
-  border-color: #8bd5ff !important;
-}
-
-/* Radio, checkbox, toggle, slider and select focus/selected states. */
-[data-testid="stRadio"] label,
-[data-testid="stCheckbox"] label,
-[data-testid="stToggle"] label,
-[role="radio"], [role="checkbox"], [role="switch"] {
-  color: #eaf2fc !important;
-}
-[role="radio"][aria-checked="true"],
-[role="checkbox"][aria-checked="true"],
-[role="switch"][aria-checked="true"] {
-  color: #ffffff !important;
-  background-color: #1d354d !important;
-}
-[data-baseweb="select"] > div:focus,
-[data-baseweb="select"] > div:focus-within,
-[data-baseweb="input"]:focus-within,
-[data-baseweb="textarea"]:focus-within,
-.stTextInput input:focus, .stNumberInput input:focus,
-.stTextArea textarea:focus {
-  background-color: #102034 !important;
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-  border-color: #8bd5ff !important;
-  box-shadow: 0 0 0 2px rgba(139,213,255,.18) !important;
-}
-[data-baseweb="popover"], [data-baseweb="popover"] > div,
-[data-baseweb="menu"], [role="listbox"], [role="option"] {
-  background-color: #101c2b !important;
-  color: #f0f5fc !important;
-}
-[role="option"]:hover, [role="option"][aria-selected="true"] {
-  background-color: #244563 !important;
-  color: #ffffff !important;
-}
-
-/* AI Assessment metrics and explanation panel have an explicit dark surface. */
-[data-testid="stMetric"],
-[data-testid="stMetric"]:hover,
-[data-testid="stMetric"]:focus-within {
-  background: linear-gradient(145deg, #17283b, #101b2a) !important;
-  color: #f5f8ff !important;
-  border-color: #405773 !important;
-}
-[data-testid="stMetric"] [data-testid="stMetricLabel"],
-[data-testid="stMetric"] label {
-  color: #c4d2e2 !important;
-}
-[data-testid="stMetric"] [data-testid="stMetricValue"],
-[data-testid="stMetric"] [data-testid="stMetricDelta"] {
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-}
-
-/* Keep notifications, tooltips, dialogs and popovers legible when opened. */
-[data-testid="stAlert"], [data-testid="stNotification"],
-[data-testid="stToast"], [data-testid="stDialog"],
-[role="dialog"], [data-testid="stPopoverBody"] {
-  color: #f0f5fc !important;
-}
-[data-testid="stDialog"] *, [role="dialog"] *,
-[data-testid="stPopoverBody"] * {
-  color: inherit;
-}
-[data-testid="stTooltipContent"], [role="tooltip"] {
-  background: #101c2b !important;
-  color: #f5f8ff !important;
-  border: 1px solid #58718d !important;
-}
-/* Visited/focused links remain visible on dark panels. */
-a, a:visited, a:hover, a:active, a:focus {
-  color: #79cfff !important;
-  text-decoration-color: rgba(121,207,255,.55) !important;
 }
 </style>
 """, unsafe_allow_html=True)
