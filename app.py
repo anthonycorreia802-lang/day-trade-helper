@@ -9,6 +9,7 @@ from datetime import datetime, date, time as dtime
 from zoneinfo import ZoneInfo
 import uuid
 import io
+import html
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 
@@ -322,9 +323,91 @@ div[data-testid="stPlotlyChart"] {
   font-weight: 700;
   margin-bottom: .45rem;
 }
-.educational-disclaimer p,
-.educational-disclaimer strong { color: #c9ced8 !important; }
+.educational-disclaimer,
+.educational-disclaimer * {
+  background-color: transparent;
+  color: #d1d4dc !important;
+  -webkit-text-fill-color: #d1d4dc !important;
+}
+.educational-disclaimer {
+  background: #1e222d !important;
+  border: 1px solid #3a4050 !important;
+  border-left: 3px solid #d6a84f !important;
+}
+.educational-disclaimer .disclaimer-heading {
+  background: transparent !important;
+  color: #e5c879 !important;
+  -webkit-text-fill-color: #e5c879 !important;
+}
 .educational-disclaimer p { margin: .3rem 0; }
+.educational-disclaimer strong {
+  color: #f0f3fa !important;
+  -webkit-text-fill-color: #f0f3fa !important;
+}
+
+/* Streamlit metric deltas carry the small percentage / return text. Keep them
+   on a dark pill with an explicit foreground so theme defaults cannot wash them out. */
+[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: .25rem !important;
+  padding: 2px 7px !important;
+  margin-top: 3px !important;
+  border: 1px solid #3b4658 !important;
+  border-radius: 5px !important;
+  background: #252c39 !important;
+  color: #dce5f2 !important;
+  -webkit-text-fill-color: #dce5f2 !important;
+  opacity: 1 !important;
+  font-weight: 600 !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricDelta"] *,
+[data-testid="stMetric"] [data-testid="stMetricDelta"] svg {
+  color: #dce5f2 !important;
+  fill: #dce5f2 !important;
+  -webkit-text-fill-color: #dce5f2 !important;
+  opacity: 1 !important;
+}
+
+/* Reusable, explicit dark notices for paper-trading and model-learning states. */
+.terminal-notice {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: .55rem 0 .8rem;
+  padding: .75rem .9rem;
+  border: 1px solid #40506a;
+  border-left: 3px solid #6f9df5;
+  border-radius: 7px;
+  background: #222b3a !important;
+  color: #dce5f2 !important;
+  -webkit-text-fill-color: #dce5f2 !important;
+  line-height: 1.5;
+  font-size: .9rem;
+}
+.terminal-notice * {
+  background: transparent !important;
+  color: #dce5f2 !important;
+  -webkit-text-fill-color: #dce5f2 !important;
+}
+.terminal-notice-learning { border-left-color: #d6a84f; background: #302b20 !important; }
+.terminal-notice-learning, .terminal-notice-learning * { color: #f0dfb4 !important; -webkit-text-fill-color: #f0dfb4 !important; }
+.terminal-notice-position { border-left-color: #6f9df5; }
+
+/* Keep Streamlit's native info boxes readable in the same dark interface. */
+[data-testid="stAlert"] {
+  background: #222b3a !important;
+  border: 1px solid #40506a !important;
+  color: #dce5f2 !important;
+}
+[data-testid="stAlert"] *,
+[data-testid="stAlert"] [data-testid="stMarkdownContainer"] *,
+[data-testid="stAlert"] svg {
+  color: #dce5f2 !important;
+  fill: #dce5f2 !important;
+  -webkit-text-fill-color: #dce5f2 !important;
+  opacity: 1 !important;
+}
 
 .terminal-hero {
   padding: .9rem 1.1rem; margin:.15rem 0 .9rem;
@@ -359,6 +442,16 @@ def info_heading(label, explanation, level=3):
     safe_label = str(label).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     safe_tip = str(explanation).replace('&', '&amp;').replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
     st.markdown(f'<h{level} style="margin:.35rem 0 .55rem">{safe_label}<span class="info-tip" title="{safe_tip}" aria-label="More information">i</span></h{level}>', unsafe_allow_html=True)
+
+
+def render_terminal_notice(message, kind="info"):
+    """Render a high-contrast notice with a deliberately dark surface."""
+    safe_message = html.escape(str(message))
+    safe_kind = kind if kind in {"info", "learning", "position"} else "info"
+    st.markdown(
+        f'<div class="terminal-notice terminal-notice-{safe_kind}" role="status">{safe_message}</div>',
+        unsafe_allow_html=True,
+    )
 
 # ---------- Yahoo Finance symbol search / recommendations ----------
 @st.cache_data(ttl=900, show_spinner=False)
@@ -1684,9 +1777,10 @@ def render_dashboard():
             ai_b.metric("Your Recorded Win Rate", f"{adaptive_model['win_rate'] * 100:.1f}%" if adaptive_model.get("win_rate") is not None else "—")
             ai_c.metric("Model Status", "Learning" if not adaptive_model.get("active") else "Active")
             if adaptive_estimate is None:
-                st.info(
+                render_terminal_notice(
                     "The model is still learning. Close at least 20 paper trades with saved signal snapshots and include both wins and losses. "
-                    "Until then, the terminal uses its transparent rule-based technical score."
+                    "Until then, the terminal uses its transparent rule-based technical score.",
+                    kind="learning",
                 )
             else:
                 st.metric(
@@ -1889,7 +1983,10 @@ def render_dashboard():
         buy_disabled = already_open or limit_hit or not long_calc.get("valid", False)
         short_disabled = already_open or limit_hit or not short_calc.get("valid", False)
         if already_open:
-            st.info(f"You already have an open paper position on {ticker}. The buttons stay visible, but close that position before opening another on the same asset.")
+            render_terminal_notice(
+                f"You already have an open paper position on {ticker}. The buttons stay visible, but close that position before opening another on the same asset.",
+                kind="position",
+            )
         if buy_col.button(
             f"🚀 Paper BUY · {buy_qty_text} {long_calc.get('unit', 'shares')}",
             key=f"quick_auto_buy_{ticker}",
@@ -2289,7 +2386,8 @@ render_dashboard()
 
 st.markdown("""
 <div class="educational-disclaimer">
-  <div class="disclaimer-heading">⚠️ Educational use only</div>
+  <div class="disclaimer-heading">⚠️ Educational Disclaimer</div>
+  <p><strong>Educational use only:</strong> This terminal is a learning and research tool, not a broker or a substitute for independent financial judgment.</p>
   <p><strong>Market data:</strong> Quotes and history come from Yahoo Finance and may be delayed, incomplete, adjusted, or unavailable.</p>
   <p><strong>Signals, AI assessments and percentages:</strong> These are technical scenarios and calculations, not personalized investment advice, calibrated win probabilities, or guarantees. A target percentage describes the distance between entry and target; it does not describe the likelihood of reaching it.</p>
   <p><strong>Paper Trading Desk:</strong> All paper positions and P&amp;L are simulated. Percent returns use entry notional for each trade; portfolio return uses the paper starting balance. Simulations do not include every real-world fee, spread, tax, borrow cost, or execution difference.</p>
