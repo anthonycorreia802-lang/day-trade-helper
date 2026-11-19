@@ -2281,9 +2281,12 @@ section[data-testid="stSidebar"] h4 {
   line-height: 1.25 !important;
   overflow-wrap: anywhere !important;
 }
-/* Explicitly separate the projection row from the entry / target / stop row. */
+/* Give the second row its own breathing room, without changing other sections. */
 .st-key-live_price_targets [data-testid="stHorizontalBlock"] + [data-testid="stHorizontalBlock"] {
-  margin-top: 16px !important;
+  margin-top: 30px !important;
+}
+.st-key-live_price_targets [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) {
+  margin-bottom: 0 !important;
 }
 @media (max-width: 700px) {
   .st-key-live_price_targets [data-testid="stHorizontalBlock"] {
