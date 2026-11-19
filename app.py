@@ -4130,7 +4130,7 @@ def render_dashboard():
             )
         with st.expander("Why the AI assessment looks this way", expanded=True):
             if reward_assessment["side"] == "MIXED":
-                st.info("Bullish and bearish technical checks are tied. Waiting for alignment is more informative than forcing a direction.")
+                render_terminal_notice("Bullish and bearish technical checks are tied. Waiting for alignment is more informative than forcing a direction.", kind="info")
             else:
                 for reason in reward_assessment["reasons"]:
                     st.markdown(f"- {reason}")
