@@ -1172,6 +1172,110 @@ div[data-testid="column"] [data-testid="stVerticalBlock"] {
   }
 }
 
+
+
+/* ---------- Paper Trading Desk: consistent grid and page rhythm ---------- */
+.block-container {
+  padding-top: 1.25rem !important;
+  padding-bottom: 2.25rem !important;
+}
+[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
+  align-items: stretch !important;
+  column-gap: 1rem !important;
+}
+[data-testid="stMainBlockContainer"] [data-testid="column"] {
+  min-width: 0 !important;
+}
+
+/* The five Paper Desk summary tiles all use the same custom card renderer. */
+.terminal-pct-card {
+  min-height: 116px !important;
+  height: 100% !important;
+  padding: 35px 14px 14px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+.terminal-pct-card .terminal-pct-label {
+  min-height: 17px;
+  margin-bottom: 7px !important;
+}
+.terminal-pct-card .terminal-pct-value {
+  line-height: 1.22 !important;
+  overflow-wrap: anywhere !important;
+}
+.terminal-text-card {
+  padding-top: 17px !important;
+}
+.terminal-text-card .terminal-pct-label:first-child {
+  min-height: 0;
+  margin-bottom: 8px !important;
+}
+
+/* Keep open-position panels aligned, with a single outer panel and tidy inner spacing. */
+[data-testid="stVerticalBlockBorderWrapper"] {
+  box-sizing: border-box !important;
+  padding: 14px !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] > div {
+  width: 100% !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
+  align-items: stretch !important;
+  gap: .85rem !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMetric"] {
+  height: 100% !important;
+  min-height: 92px !important;
+  box-sizing: border-box !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] {
+  min-width: 0 !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* Consistent vertical rhythm between dashboard sections, forms, charts and tables. */
+[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] {
+  gap: .8rem;
+}
+[data-testid="stExpander"] {
+  margin: 2px 0 8px !important;
+}
+[data-testid="stDataFrame"],
+[data-testid="stDataEditor"],
+div[data-testid="stPlotlyChart"] {
+  margin-top: 5px !important;
+  margin-bottom: 9px !important;
+}
+[data-testid="stAlert"] {
+  margin: 5px 0 !important;
+}
+
+/* Avoid squeezed five-column cards on tablets; Streamlit stacks columns on phones. */
+@media (max-width: 1100px) {
+  .terminal-pct-card {
+    padding-left: 11px !important;
+    padding-right: 11px !important;
+  }
+  .terminal-pct-card .terminal-pct-value {
+    font-size: clamp(16px, 1.8vw, 23px) !important;
+  }
+}
+@media (max-width: 700px) {
+  .block-container {
+    padding: .85rem .75rem 1.5rem !important;
+  }
+  [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
+    gap: .65rem !important;
+  }
+  .terminal-pct-card {
+    min-height: 104px !important;
+    padding: 33px 11px 12px !important;
+  }
+  [data-testid="stVerticalBlockBorderWrapper"] {
+    padding: 10px !important;
+  }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -3475,15 +3579,15 @@ def render_dashboard():
         portfolio_equity = float(st.session_state.account_size) + realized_pnl + unrealized_pnl
         total_return = ((portfolio_equity / float(st.session_state.account_size)) - 1) * 100 if st.session_state.account_size else 0.0
 
-        p1, p2, p3, p4, p5 = st.columns(5, gap="small")
-        render_standard_metric(p1, "Paper Starting Balance", f"${st.session_state.account_size:,.2f}")
+        p1, p2, p3, p4, p5 = st.columns(5, gap="medium")
+        render_matching_metric(p1, "Paper Starting Balance", f"${st.session_state.account_size:,.2f}")
         render_percentage_metric(
             p2, "Paper Portfolio Equity", f"${portfolio_equity:,.2f}",
             percentage_indicator_html(total_return, label=f"{total_return:+.2f}% vs start"),
         )
-        render_standard_metric(p3, "Realized P&L", f"${realized_pnl:+,.2f}")
-        render_standard_metric(p4, "Open P&L", f"${unrealized_pnl:+,.2f}")
-        render_standard_metric(p5, "Open Positions", str(len(open_trades)))
+        render_matching_metric(p3, "Realized P&L", f"${realized_pnl:+,.2f}")
+        render_matching_metric(p4, "Open P&L", f"${unrealized_pnl:+,.2f}")
+        render_matching_metric(p5, "Open Positions", str(len(open_trades)))
         st.caption(
             "Paper portfolio return = (paper equity ÷ paper starting balance − 1). "
             "Each trade's return % below uses its own entry notional (entry price × shares/units). "
@@ -3597,11 +3701,14 @@ def render_dashboard():
             ]
             valid_trade_returns = [value for value in cdf["return_pct"].tolist() if value is not None and np.isfinite(value)]
             avg_trade_return = float(np.mean(valid_trade_returns)) if valid_trade_returns else 0.0
-            a1, a2, a3, a4, a5 = st.columns(5)
-            a1.metric("Net Realized P&L", f"${sum(pnl_values):+,.2f}")
-            a2.metric("Win Rate", f"{win_rate:.1f}%", f"{len(wins)} wins · {len(losses)} losses · {breakeven_count} flat")
-            a3.metric("Average Winner", f"${avg_win:+,.2f}")
-            a4.metric("Average Loser", f"${avg_loss:+,.2f}")
+            a1, a2, a3, a4, a5 = st.columns(5, gap="medium")
+            render_matching_metric(a1, "Net Realized P&L", f"${sum(pnl_values):+,.2f}")
+            render_matching_metric(
+                a2, "Win Rate", f"{win_rate:.1f}%",
+                f"{len(wins)} wins · {len(losses)} losses · {breakeven_count} flat",
+            )
+            render_matching_metric(a3, "Average Winner", f"${avg_win:+,.2f}")
+            render_matching_metric(a4, "Average Loser", f"${avg_loss:+,.2f}")
             render_percentage_metric(
                 a5, "Average Trade Return", f"{avg_trade_return:+.2f}%",
                 percentage_indicator_html(avg_trade_return, label=f"{avg_trade_return:+.2f}% average"),
