@@ -1086,8 +1086,8 @@ def directional_learning_features(signal, side):
     direction = 1.0 if side == "LONG" else -1.0
     score = float(signal.get("long_score" if side == "LONG" else "short_score", 0.0))
     rsi = float(signal.get("rsi", 50.0))
-    vwap_gap = float(signal.get("vwap_gap_pct", 0.0))
-    ema_spread = float(signal.get("ema_spread_pct", 0.0))
+    vwap_gap = float(signal.get("reference_gap_pct", signal.get("vwap_gap_pct", 0.0)))
+    ema_spread = float(signal.get("trend_spread_pct", signal.get("ema_spread_pct", 0.0)))
     volume_ratio = float(signal.get("volume_ratio", 1.0))
     clip = lambda value: float(np.clip(value, -1.0, 1.0))
     return {
@@ -1099,11 +1099,15 @@ def directional_learning_features(signal, side):
     }
 
 
-def fit_adaptive_model(paper_trades, min_samples=20):
-    """Fit a small, transparent logistic model only on closed paper trades with snapshots."""
+def fit_adaptive_model(paper_trades, min_samples=20, trading_horizon=None):
+    """Fit a small local model on closed practice trades from the matching holding horizon."""
     samples, outcomes = [], []
     for trade in paper_trades or []:
         if not isinstance(trade, dict) or str(trade.get("status", "")).upper() != "CLOSED":
+            continue
+        # Legacy trades predate the horizon selector and are treated as day trades.
+        trade_horizon = trade.get("trading_horizon", "Day Trading")
+        if trading_horizon is not None and trade_horizon != trading_horizon:
             continue
         features = trade.get("ai_features")
         pnl = trade.get("pnl")
@@ -1165,18 +1169,21 @@ def predict_adaptive_model(model, features):
         return None
 
 def build_reward_assessment(signal, adaptive_model=None, trend_bias="Unavailable", rr_ratio=1.8):
-    """Explain selected-asset reward scenarios without inventing a calibrated win probability."""
+    """Explain the selected horizon's five technical checks without claiming win probability."""
     long_score = int(signal.get("long_score", 0))
     short_score = int(signal.get("short_score", 0))
+    horizon = signal.get("horizon", "Day Trading")
     if long_score == short_score:
         return {
             "side": "MIXED", "score": max(long_score, short_score),
             "label": "No clear directional edge", "plan": None,
+            "technical_alignment_pct": max(long_score, short_score) / 5.0 * 100.0,
+            "checks_passed": max(long_score, short_score), "checks_total": 5,
             "potential_reward_pct": None, "risk_pct": None,
             "reward_to_risk": None, "pattern_estimate": None,
             "reasons": [
-                "Bullish and bearish checks are tied, so the model does not favor either direction.",
-                "Wait for price, moving averages and momentum to align before treating either target as a meaningful scenario.",
+                f"Bullish and bearish {horizon.lower()} checks are tied, so the model does not favor either direction.",
+                "Wait for price, trend and momentum to align before treating either target as a useful scenario.",
             ],
         }
 
@@ -1188,35 +1195,64 @@ def build_reward_assessment(signal, adaptive_model=None, trend_bias="Unavailable
     stop_gap = max(float(signal.get("stop_dist", 0.0)), price * 0.0025, 0.000001)
     plan = build_quick_trade_plan(signal, price, stop_gap, rr_ratio, side, digits)
 
-    above_vwap = bool(signal.get("above_vwap", float(signal.get("vwap_gap_pct", 0.0)) > 0))
-    ema_bullish = bool(signal.get("ema_bullish", float(signal.get("ema_spread_pct", 0.0)) > 0))
-    price_above_ema9 = bool(signal.get("price_above_ema9", True))
     volume_ratio = float(signal.get("volume_ratio", 1.0))
     rsi = float(signal.get("rsi", 50.0))
-    volume_ok = volume_ratio >= 0.85
-    momentum_ok = (40 < rsi < 70) if is_long else (30 < rsi < 60)
     trend_text = str(trend_bias or "Unavailable").lower()
     trend_matches = ("bullish" in trend_text or "up" in trend_text) if is_long else ("bearish" in trend_text or "down" in trend_text)
+    if horizon == "Day Trading":
+        above_vwap = bool(signal.get("above_vwap", float(signal.get("vwap_gap_pct", 0.0)) > 0))
+        ema_bullish = bool(signal.get("ema_bullish", float(signal.get("ema_spread_pct", 0.0)) > 0))
+        price_confirm = bool(signal.get("price_above_ema9", True))
+        volume_ok = volume_ratio >= 0.85
+        momentum_ok = (40 < rsi < 70) if is_long else (30 < rsi < 60)
+        checks = [
+            ("Price versus VWAP", above_vwap if is_long else not above_vwap,
+             "Price is above VWAP, supporting buyers." if is_long else "Price is below VWAP, supporting sellers.",
+             "Price is below VWAP, weakening the long case." if is_long else "Price is above VWAP, weakening the short case."),
+            ("EMA 9 / EMA 20 trend", ema_bullish if is_long else not ema_bullish,
+             "EMA 9 is above EMA 20, showing an upward short-term trend." if is_long else "EMA 9 is below EMA 20, showing a downward short-term trend.",
+             "EMA 9 / EMA 20 are not aligned with this direction."),
+            ("Price confirmation", price_confirm if is_long else not price_confirm,
+             "Price is on the supportive side of EMA 9." if is_long else "Price is below EMA 9, supporting the short scenario.",
+             "Price has not confirmed this direction around EMA 9."),
+            ("Volume confirmation", volume_ok,
+             f"Volume is {volume_ratio:.2f}× its recent average, meeting the activity check.",
+             f"Volume is {volume_ratio:.2f}× its recent average, below the confirmation threshold."),
+            ("RSI momentum", momentum_ok,
+             f"RSI is {rsi:.1f}, inside the preferred momentum range for this side.",
+             f"RSI is {rsi:.1f}, outside the preferred momentum range for this side."),
+        ]
+    else:
+        reference_name = str(signal.get("reference_name", "trend average"))
+        fast_name = str(signal.get("trend_fast_name", "faster average"))
+        slow_name = str(signal.get("trend_slow_name", "slower average"))
+        reference_gap = float(signal.get("reference_gap_pct", 0.0))
+        trend_bullish = bool(signal.get("trend_bullish", False))
+        slope_pct = float(signal.get("trend_slope_pct", 0.0))
+        price_confirm = bool(signal.get("price_above_trend_fast", True))
+        volume_threshold = 0.80 if horizon == "Swing Trading" else 0.75
+        volume_ok = volume_ratio >= volume_threshold
+        momentum_ok = (40 < rsi < 70) if horizon == "Swing Trading" else (42 < rsi < 72)
+        checks = [
+            (f"Price versus {reference_name}", reference_gap > 0 if is_long else reference_gap < 0,
+             f"Price is above {reference_name}, supporting the upward case." if is_long else f"Price is below {reference_name}, supporting the downward case.",
+             f"Price is below {reference_name}, weakening the long case." if is_long else f"Price is above {reference_name}, weakening the short case."),
+            (f"{fast_name} / {slow_name} trend", trend_bullish if is_long else not trend_bullish,
+             f"{fast_name} is above {slow_name}, supporting the longer trend." if is_long else f"{fast_name} is below {slow_name}, supporting the downward trend.",
+             f"{fast_name} and {slow_name} are not aligned with this direction."),
+            ("Trend slope / price position", (slope_pct > 0 and price_confirm) if is_long else (slope_pct < 0 and not price_confirm),
+             f"The faster trend line is moving in the selected direction ({slope_pct:+.2f}% over its lookback).",
+             f"The faster trend line or current price is not confirming this direction ({slope_pct:+.2f}% slope)."),
+            ("Volume confirmation", volume_ok,
+             f"Volume is {volume_ratio:.2f}× its recent average, meeting the activity check.",
+             f"Volume is {volume_ratio:.2f}× its recent average, below the confirmation threshold."),
+            ("RSI momentum", momentum_ok,
+             f"RSI is {rsi:.1f}, inside the preferred momentum range for this horizon.",
+             f"RSI is {rsi:.1f}, outside the preferred momentum range for this horizon."),
+        ]
 
-    checks = [
-        ("Price versus VWAP", above_vwap if is_long else not above_vwap,
-         "Price is above VWAP, supporting buyers." if is_long else "Price is below VWAP, supporting sellers.",
-         "Price is below VWAP, weakening the long case." if is_long else "Price is above VWAP, weakening the short case."),
-        ("EMA 9 / EMA 20 trend", ema_bullish if is_long else not ema_bullish,
-         "EMA 9 is above EMA 20, showing an upward short-term trend." if is_long else "EMA 9 is below EMA 20, showing a downward short-term trend.",
-         "EMA 9 / EMA 20 are not aligned with this direction."),
-        ("Price confirmation", price_above_ema9 if is_long else not price_above_ema9,
-         "Price is on the supportive side of EMA 9." if is_long else "Price is below EMA 9, supporting the short scenario.",
-         "Price has not confirmed this direction around EMA 9."),
-        ("Volume confirmation", volume_ok,
-         f"Volume is {volume_ratio:.2f}× its recent average, meeting the activity check.",
-         f"Volume is {volume_ratio:.2f}× its recent average, below the confirmation threshold."),
-        ("RSI momentum", momentum_ok,
-         f"RSI is {rsi:.1f}, inside the preferred momentum range for this side.",
-         f"RSI is {rsi:.1f}, outside the preferred momentum range for this side."),
-    ]
-    reasons = [f"{'✓' if passed else '!' } {name}: {good if passed else caution}" for name, passed, good, caution in checks]
-    if trend_bias and trend_bias != "Unavailable" and trend_bias != "Not enough data":
+    reasons = [f"{'✓' if passed else '!'} {name}: {good if passed else caution}" for name, passed, good, caution in checks]
+    if trend_bias and trend_bias not in {"Unavailable", "Not enough data"}:
         reasons.append(
             f"{'✓' if trend_matches else '!'} Higher timeframe: {trend_bias}; "
             + ("it agrees with this setup." if trend_matches else "it does not confirm this direction.")
@@ -1224,14 +1260,11 @@ def build_reward_assessment(signal, adaptive_model=None, trend_bias="Unavailable
     label = "Strong technical confluence" if score >= 4 and trend_matches else (
         "Developing setup" if score >= 3 else "Weak / wait for confirmation"
     )
-    entry = float(plan["entry"])
-    stop = float(plan["stop"])
-    target = float(plan["target"])
-    percent_metrics = calculate_directional_percentages(price, entry, stop, target, side)
+    percent_metrics = calculate_directional_percentages(
+        price, float(plan["entry"]), float(plan["stop"]), float(plan["target"]), side
+    )
     if not percent_metrics.get("valid"):
-        potential_reward_pct = None
-        risk_pct = None
-        reward_to_risk = None
+        potential_reward_pct = risk_pct = reward_to_risk = None
     else:
         potential_reward_pct = percent_metrics["reward_pct"]
         risk_pct = percent_metrics["risk_pct"]
@@ -1241,12 +1274,13 @@ def build_reward_assessment(signal, adaptive_model=None, trend_bias="Unavailable
     ) if adaptive_model else None
     return {
         "side": side, "score": score, "label": label, "plan": plan,
+        "technical_alignment_pct": score / 5.0 * 100.0,
+        "checks_passed": score, "checks_total": 5,
         "potential_reward_pct": potential_reward_pct, "risk_pct": risk_pct,
         "reward_to_risk": reward_to_risk,
         "pattern_estimate": pattern_estimate, "trend_matches": trend_matches,
         "reasons": reasons,
     }
-
 
 def simulate_historical_practice(df, side="LONG", bars_back=20, horizon=10, rr_ratio=2.0, atr_multiple=1.0):
     """Replay one educational trade on historical candles; resolve same-candle ties conservatively."""
@@ -1340,9 +1374,10 @@ def render_beginner_quiz():
                 st.rerun()
 
 
-def render_historical_practice_simulator(df, ticker, rr_ratio=1.8):
+def render_historical_practice_simulator(df, ticker, rr_ratio=1.8, trading_horizon="Day Trading"):
     """Offer a one-trade historical replay using only candles already loaded for the selected asset."""
     with st.expander("🎮 Practice Trade Simulator", expanded=False):
+        st.caption(f"Practice candles follow the selected {trading_horizon.lower()} chart interval. A candle may represent minutes, a day, a week or a month.")
         max_back = min(120, len(df) - 2) if df is not None else 0
         if max_back < 6:
             st.info("Load more historical candles or choose a longer chart timeframe to use the simulator.")
@@ -1373,7 +1408,7 @@ def render_historical_practice_simulator(df, ticker, rr_ratio=1.8):
 
 def scan_recommendation_candidates(
     scan_interval="15m", prepost=False, rr_ratio=1.8, extra_symbols=None,
-    learning_trades=None, scan_offset=0, batch_size=30
+    learning_trades=None, scan_offset=0, batch_size=30, trading_horizon="Day Trading"
 ):
     """Scan a rotating basket from a broad live market universe plus pinned watchlist assets."""
     universe = discover_market_universe()
@@ -1397,7 +1432,7 @@ def scan_recommendation_candidates(
         batch, next_offset = [], 0
     symbols_to_scan = list(dict.fromkeys(pinned + batch))
 
-    adaptive_model = fit_adaptive_model(learning_trades or [])
+    adaptive_model = fit_adaptive_model(learning_trades or [], trading_horizon=trading_horizon)
     rows = []
     scanned_ok = 0
     for symbol in symbols_to_scan:
@@ -1405,10 +1440,10 @@ def scan_recommendation_candidates(
             raw = get_intraday_data(symbol, scan_interval, prepost=prepost)
             if raw is None or raw.empty or len(raw) < 30:
                 continue
-            enriched = add_indicators(raw)
+            enriched = add_indicators(raw, trading_horizon)
             daily = get_daily_stats(symbol)
             live_quote = get_fast_quote(symbol)
-            stats = compute_price_targets_and_signal(enriched, live_quote, daily, scan_interval, rr_ratio)
+            stats = compute_price_targets_and_signal(enriched, live_quote, daily, scan_interval, rr_ratio, trading_horizon)
             side = stats["side"]
             if side not in {"LONG", "SHORT"} or int(stats["score"]) < 3:
                 continue
@@ -1436,7 +1471,7 @@ def scan_recommendation_candidates(
                 "Entry": round(entry_price, digits),
                 "Stop": round(stats["stop"], digits),
                 "RSI": round(stats["rsi"], 1),
-                "AI Pattern": f"{ai_probability * 100:.0f}%" if ai_probability is not None else "Learning",
+                "AI Model": "Active · secondary ranking" if ai_probability is not None else "Learning",
                 "_score": int(stats["score"]),
                 "_reward_pct": float(target_pct),
                 "_ai_probability": ai_probability if ai_probability is not None else 0.5,
@@ -1494,16 +1529,21 @@ def get_market_session():
 # ---------- Data & Indicators ----------
 @st.cache_data(ttl=5, show_spinner=False)
 def get_intraday_data(ticker, interval, prepost=True):
-    # Yahoo Finance supports 1m, 2m, 5m, 15m, 30m and 60m intraday bars.
-    # 1m history is much more restricted than the larger intervals.
-    period = "2d" if interval == "1m" else "60d"
+    """Load intraday or longer-horizon Yahoo Finance candles."""
+    period_by_interval = {
+        "1m": "2d", "2m": "60d", "5m": "60d", "15m": "60d",
+        "30m": "60d", "60m": "60d", "1d": "5y", "1wk": "10y", "1mo": "max",
+    }
+    if interval not in period_by_interval:
+        raise ValueError(f"Unsupported chart interval: {interval}")
+    is_intraday = interval in {"1m", "2m", "5m", "15m", "30m", "60m"}
     df = yf.download(
         ticker,
-        period=period,
+        period=period_by_interval[interval],
         interval=interval,
-        prepost=prepost,
+        prepost=bool(prepost) if is_intraday else False,
         progress=False,
-        auto_adjust=True
+        auto_adjust=True,
     )
     if df is None or df.empty:
         return pd.DataFrame()
@@ -1556,7 +1596,8 @@ def get_fast_quote(ticker):
         pass
     return None
 
-def add_indicators(df):
+def add_indicators(df, trading_horizon="Day Trading"):
+    """Add shared indicators; select trend markers appropriate to the holding horizon."""
     df = df.copy()
     typical = (df["High"] + df["Low"] + df["Close"]) / 3
     vol_clean = df["Volume"].replace(0, np.nan).fillna(1)
@@ -1566,8 +1607,8 @@ def add_indicators(df):
     df["Cum_TP_Vol"] = df.groupby("Date")["TP_Vol"].cumsum()
     df["VWAP"] = (df["Cum_TP_Vol"] / df["Cum_Vol"]).fillna(df["Close"])
 
-    df["EMA9"] = df["Close"].ewm(span=9, adjust=False).mean()
-    df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
+    for period in (9, 20, 50, 100, 200):
+        df[f"EMA{period}"] = df["Close"].ewm(span=period, adjust=False).mean()
 
     delta = df["Close"].diff()
     gain = delta.clip(lower=0)
@@ -1576,7 +1617,8 @@ def add_indicators(df):
     avg_loss = loss.ewm(alpha=1/14, min_periods=14, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0, np.nan)
     df["RSI"] = (100 - (100 / (1 + rs))).fillna(50.0)
-    df["Vol_MA"] = df["Volume"].rolling(8).mean()
+    volume_window = 8 if trading_horizon == "Day Trading" else 20
+    df["Vol_MA"] = df["Volume"].rolling(volume_window, min_periods=max(3, volume_window // 2)).mean()
 
     prev_close = df["Close"].shift(1)
     tr = pd.concat([
@@ -1585,22 +1627,47 @@ def add_indicators(df):
         (df["Low"] - prev_close).abs()
     ], axis=1).max(axis=1)
     df["ATR"] = tr.ewm(alpha=1/14, min_periods=14, adjust=False).mean().fillna(df["Close"] * 0.003)
-    
+
+    if trading_horizon == "Day Trading":
+        reference = df["VWAP"]
+        fast, slow = df["EMA9"], df["EMA20"]
+        slope_bars = 3
+    elif trading_horizon == "Swing Trading":
+        reference = df["EMA50"]
+        fast, slow = df["EMA20"], df["EMA50"]
+        slope_bars = 5
+    else:
+        slow_period = 200 if len(df) >= 205 else (100 if len(df) >= 105 else 50)
+        fast_period = 50 if slow_period > 50 else 20
+        reference = df[f"EMA{slow_period}"]
+        fast, slow = df[f"EMA{fast_period}"], reference
+        slope_bars = 10
+
+    trend_slope = fast - fast.shift(slope_bars)
+    above_reference = df["Close"] > reference
+    below_reference = df["Close"] < reference
+    trend_up = fast > slow
+    trend_down = fast < slow
+    rising_slope = trend_slope > 0
+    falling_slope = trend_slope < 0
+    vol_ma = df["Vol_MA"].fillna(df["Volume"].replace(0, np.nan).median()).fillna(1.0)
+    volume_ok = df["Volume"] >= vol_ma * (0.85 if trading_horizon == "Day Trading" else 0.80)
+    if trading_horizon == "Day Trading":
+        long_confirm = df["Close"] > df["EMA9"]
+        short_confirm = df["Close"] < df["EMA9"]
+    else:
+        long_confirm = rising_slope
+        short_confirm = falling_slope
     df["Signal"] = "HOLD"
-    above_vwap = df["Close"] > df["VWAP"]
-    below_vwap = df["Close"] < df["VWAP"]
-    ema_up = df["EMA9"] > df["EMA20"]
-    ema_down = df["EMA9"] < df["EMA20"]
-    
-    df.loc[above_vwap & ema_up & (df["RSI"] < 70), "Signal"] = "BUY"
-    df.loc[below_vwap & ema_down & (df["RSI"] > 30), "Signal"] = "SELL"
-    
+    df.loc[above_reference & trend_up & long_confirm & volume_ok & (df["RSI"] < 75), "Signal"] = "BUY"
+    df.loc[below_reference & trend_down & short_confirm & volume_ok & (df["RSI"] > 25), "Signal"] = "SELL"
     return df
 
-def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_ratio):
-    """Build directional levels from ATR and return a transparent 0-5 setup score."""
+
+def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_ratio, trading_horizon="Day Trading"):
+    """Build horizon-aware 0–5 technical scores and ATR-based illustrative trade levels."""
     if df is None or df.empty:
-        raise ValueError("No intraday bars available.")
+        raise ValueError("No price candles available.")
 
     latest = df.iloc[-1]
     prev = df.iloc[-2] if len(df) >= 2 else latest
@@ -1609,118 +1676,196 @@ def compute_price_targets_and_signal(df, live_price, daily_stats, interval, rr_r
         raise ValueError("Latest price is invalid.")
 
     vwap = float(latest["VWAP"])
-    ema9 = float(latest["EMA9"])
-    ema20 = float(latest["EMA20"])
     rsi = float(latest["RSI"])
     atr = float(latest["ATR"])
     vol = float(latest["Volume"])
     vol_ma = float(latest["Vol_MA"]) if pd.notna(latest["Vol_MA"]) and latest["Vol_MA"] > 0 else max(vol, 1.0)
     atr = max(atr if np.isfinite(atr) else price * 0.003, price * 0.001)
     digits = price_decimals(price)
-
     recent = df.tail(45)
     swing_high = float(recent["High"].max())
     swing_low = float(recent["Low"].min())
 
-    above_vwap, below_vwap = price > vwap, price < vwap
-    ema_up, ema_down = ema9 > ema20, ema9 < ema20
-    reclaim_up = float(prev["Close"]) <= float(prev["VWAP"]) and price > vwap
-    reclaim_down = float(prev["Close"]) >= float(prev["VWAP"]) and price < vwap
-    vol_ok = vol >= vol_ma * 0.85
-    rsi_long_ok = 40 < rsi < 70
-    rsi_short_ok = 30 < rsi < 60
+    if trading_horizon == "Day Trading":
+        reference_name, fast_name, slow_name = "VWAP", "EMA 9", "EMA 20"
+        reference = float(latest["VWAP"])
+        fast, slow = float(latest["EMA9"]), float(latest["EMA20"])
+        fast_series = df["EMA9"]
+        slope_bars = 3
+        stop_multiple = 1.25
+        volume_threshold = 0.85
+        long_rsi_ok, short_rsi_ok = 40 < rsi < 70, 30 < rsi < 60
+        reference_up, reference_down = price > reference, price < reference
+        trend_up, trend_down = fast > slow, fast < slow
+        reclaim_up = float(prev["Close"]) <= float(prev["VWAP"]) and price > reference
+        reclaim_down = float(prev["Close"]) >= float(prev["VWAP"]) and price < reference
+        long_confirm = reclaim_up or price > fast
+        short_confirm = reclaim_down or price < fast
+        long_entry = min(price, max(reference, min(fast, price)))
+        short_entry = max(price, min(reference, max(fast, price)))
+        basis_description = "session VWAP, EMA 9/20 alignment, price confirmation, volume and RSI"
+    elif trading_horizon == "Swing Trading":
+        reference_name, fast_name, slow_name = "EMA 50", "EMA 20", "EMA 50"
+        reference = float(latest["EMA50"])
+        fast, slow = float(latest["EMA20"]), float(latest["EMA50"])
+        fast_series = df["EMA20"]
+        slope_bars = 5
+        stop_multiple = 1.75
+        volume_threshold = 0.80
+        long_rsi_ok, short_rsi_ok = 40 < rsi < 70, 30 < rsi < 60
+        reference_up, reference_down = price > reference, price < reference
+        trend_up, trend_down = fast > slow, fast < slow
+        long_confirm = len(df) > slope_bars and fast > float(df["EMA20"].iloc[-1 - slope_bars])
+        short_confirm = len(df) > slope_bars and fast < float(df["EMA20"].iloc[-1 - slope_bars])
+        long_entry = min(price, max(reference, min(fast, price)))
+        short_entry = max(price, min(reference, max(fast, price)))
+        basis_description = "price versus EMA 50, EMA 20/50 alignment, trend slope, volume and RSI"
+    else:
+        slow_period = 200 if len(df) >= 205 else (100 if len(df) >= 105 else 50)
+        fast_period = 50 if slow_period > 50 else 20
+        reference_name, fast_name, slow_name = f"EMA {slow_period}", f"EMA {fast_period}", f"EMA {slow_period}"
+        reference = float(latest[f"EMA{slow_period}"])
+        fast, slow = float(latest[f"EMA{fast_period}" ]), reference
+        fast_series = df[f"EMA{fast_period}"]
+        slope_bars = 10
+        stop_multiple = 2.25
+        volume_threshold = 0.75
+        long_rsi_ok, short_rsi_ok = 42 < rsi < 72, 28 < rsi < 58
+        reference_up, reference_down = price > reference, price < reference
+        trend_up, trend_down = fast > slow, fast < slow
+        long_confirm = len(df) > slope_bars and fast > float(fast_series.iloc[-1 - slope_bars])
+        short_confirm = len(df) > slope_bars and fast < float(fast_series.iloc[-1 - slope_bars])
+        long_entry = min(price, max(reference, min(fast, price)))
+        short_entry = max(price, min(reference, max(fast, price)))
+        basis_description = f"price versus {reference_name}, EMA {fast_period}/{slow_period} alignment, long trend slope, volume and RSI"
 
-    long_score = int(above_vwap) + int(ema_up) + int(reclaim_up or price > ema9) + int(vol_ok) + int(rsi_long_ok)
-    short_score = int(below_vwap) + int(ema_down) + int(reclaim_down or price < ema9) + int(vol_ok) + int(rsi_short_ok)
+    vol_ratio = vol / max(vol_ma, 1.0)
+    vol_ok = vol_ratio >= volume_threshold
+    fast_prior = float(fast_series.iloc[-1 - slope_bars]) if len(fast_series) > slope_bars else fast
+    trend_slope_pct = ((fast - fast_prior) / max(abs(fast_prior), 1e-9)) * 100.0
+    slope_up = trend_slope_pct > 0
+    slope_down = trend_slope_pct < 0
 
-    stop_dist = max(atr * 1.25, price * 0.0025)
-    long_entry = min(price, max(vwap, min(ema9, price)))
-    short_entry = max(price, min(vwap, max(ema9, price)))
+    long_score = int(reference_up) + int(trend_up) + int(long_confirm) + int(vol_ok) + int(long_rsi_ok)
+    short_score = int(reference_down) + int(trend_down) + int(short_confirm) + int(vol_ok) + int(short_rsi_ok)
+
+    stop_dist = max(atr * stop_multiple, price * (0.0025 if trading_horizon == "Day Trading" else 0.005))
     long_stop = round(max(0.000001, long_entry - stop_dist), digits)
     short_stop = round(short_entry + stop_dist, digits)
     long_target = round(long_entry + stop_dist * float(rr_ratio), digits)
     short_target = round(max(0.000001, short_entry - stop_dist * float(rr_ratio)), digits)
 
-    # Keep legacy output keys while making their meaning direction-aware.
-    if long_score >= 4 and long_score > short_score and price <= long_entry + atr * 0.35:
-        action = "🚀 BUY NOW (STRONG SETUP)"
+    if long_score >= 4 and long_score > short_score and (trading_horizon != "Day Trading" or price <= long_entry + atr * 0.35):
+        if trading_horizon == "Day Trading":
+            action = "🚀 BUY NOW (STRONG SETUP)"
+        elif trading_horizon == "Swing Trading":
+            action = "🟢 SWING BUY SETUP"
+        else:
+            action = "🟢 LONG-TERM BULLISH SETUP"
         reasons = [
-            f"Long setup score is {long_score}/5 with price above VWAP",
-            "EMA 9 is above EMA 20 and momentum is not overextended",
-            f"Illustrative long target ${long_target:,.{digits}f}; stop ${long_stop:,.{digits}f}"
+            f"Long-side score is {long_score}/5 using {basis_description}.",
+            f"{fast_name} is above {slow_name} and the trend slope is {'rising' if slope_up else 'not rising'}.",
+            f"Illustrative long target ${long_target:,.{digits}f}; stop ${long_stop:,.{digits}f}."
         ]
         side, score = "LONG", long_score
         ideal_buy, stop, ideal_sell = round(long_entry, digits), long_stop, long_target
     elif short_score >= 4 and short_score > long_score:
-        action = "🔻 SHORT / SELL NOW"
+        if trading_horizon == "Day Trading":
+            action = "🔻 SHORT / SELL NOW"
+        elif trading_horizon == "Swing Trading":
+            action = "🔻 SWING SHORT SETUP"
+        else:
+            action = "🔻 LONG-TERM BEARISH SETUP"
         reasons = [
-            f"Short setup score is {short_score}/5 with price below VWAP",
-            "EMA 9 is below EMA 20 and downside momentum is aligned",
-            f"Illustrative short target ${short_target:,.{digits}f}; stop ${short_stop:,.{digits}f}"
+            f"Short-side score is {short_score}/5 using {basis_description}.",
+            f"{fast_name} is below {slow_name} and the trend slope is {'falling' if slope_down else 'not falling'}.",
+            f"Illustrative short target ${short_target:,.{digits}f}; stop ${short_stop:,.{digits}f}."
         ]
         side, score = "SHORT", short_score
         ideal_buy, stop, ideal_sell = round(short_entry, digits), short_stop, short_target
     elif long_score >= 3 and long_score > short_score:
-        action = f"⏳ WAIT FOR PULLBACK TO ${long_entry:,.{digits}f}"
-        reasons = ["Bullish conditions are developing, but entry confirmation is incomplete.",
-                   f"Watch the long entry area near ${long_entry:,.{digits}f}."]
+        action = f"⏳ WAIT FOR LONG ENTRY NEAR ${long_entry:,.{digits}f}"
+        reasons = [f"Bullish conditions are developing ({long_score}/5), but all confirmation checks are not aligned yet.", f"Watch the reference trend area near ${reference:,.{digits}f}."]
         side, score = "LONG", long_score
         ideal_buy, stop, ideal_sell = round(long_entry, digits), long_stop, long_target
     elif short_score >= 3 and short_score > long_score:
-        action = f"⏳ WAIT FOR SHORT SETUP NEAR ${short_entry:,.{digits}f}"
-        reasons = ["Bearish conditions are developing, but entry confirmation is incomplete.",
-                   f"Watch the short entry area near ${short_entry:,.{digits}f}."]
+        action = f"⏳ WAIT FOR SHORT ENTRY NEAR ${short_entry:,.{digits}f}"
+        reasons = [f"Bearish conditions are developing ({short_score}/5), but all confirmation checks are not aligned yet.", f"Watch the reference trend area near ${reference:,.{digits}f}."]
         side, score = "SHORT", short_score
         ideal_buy, stop, ideal_sell = round(short_entry, digits), short_stop, short_target
     else:
         action = "🛡️ WAIT (NO CLEAR SETUP)"
-        reasons = ["Trend, momentum, and volume are not sufficiently aligned.",
-                   f"VWAP is ${vwap:,.{digits}f}; wait for a confirmed reclaim or rejection."]
+        reasons = [f"Trend, price position, volume and momentum are not sufficiently aligned for {trading_horizon.lower()}.", f"The selected reference is {reference_name} at ${reference:,.{digits}f}; wait for a clearer move."]
         side, score = "None", max(long_score, short_score)
-        ideal_buy, stop, ideal_sell = round(price, digits), round(price - stop_dist, digits), round(price + stop_dist * float(rr_ratio), digits)
+        ideal_buy, stop, ideal_sell = round(price, digits), round(max(0.000001, price - stop_dist), digits), round(price + stop_dist * float(rr_ratio), digits)
 
-    mins_per_bar = {"1m": 1, "2m": 2, "5m": 5, "15m": 15, "30m": 30, "60m": 60}.get(interval, 1)
-    hourly_expected_move = atr * np.sqrt(60 / mins_per_bar) * 0.55
-    bias_mult = 1.0 if (above_vwap and ema_up) else (-1.0 if (below_vwap and ema_down) else 0.0)
-    hourly_target = round(price + hourly_expected_move * bias_mult, digits)
+    bias_mult = 1.0 if (reference_up and trend_up) else (-1.0 if (reference_down and trend_down) else 0.0)
+    interval_minutes = {"1m": 1, "2m": 2, "5m": 5, "15m": 15, "30m": 30, "60m": 60, "1d": 390, "1wk": 1950, "1mo": 8190}.get(interval, 1)
+    if trading_horizon == "Day Trading":
+        projection_one_label, projection_two_label = "1H Projection", "Daily Projection"
+        projection_one_minutes, projection_two_minutes = 60, 390
+    elif trading_horizon == "Swing Trading":
+        projection_one_label, projection_two_label = "1-Week Projection", "1-Month Projection"
+        projection_one_minutes, projection_two_minutes = 1950, 8190
+    else:
+        projection_one_label, projection_two_label = "1-Month Projection", "3-Month Projection"
+        projection_one_minutes, projection_two_minutes = 8190, 24570
+
+    projection_one_move = atr * np.sqrt(max(1.0, projection_one_minutes / interval_minutes)) * 0.55
+    projection_two_move = atr * np.sqrt(max(1.0, projection_two_minutes / interval_minutes)) * 0.55
+    projection_one_target = round(price + projection_one_move * bias_mult, digits)
+    projection_two_target = round(price + projection_two_move * bias_mult, digits)
 
     if daily_stats:
         d_atr = max(float(daily_stats["daily_atr"]), 0.0)
         anchor = float(daily_stats["today_open"])
-        daily_target = round(price + d_atr * 0.35 * bias_mult, digits)
         daily_range = (round(anchor - d_atr * 0.75, digits), round(anchor + d_atr * 0.75, digits))
     else:
-        daily_target = round(price + hourly_expected_move * 2.5 * bias_mult, digits)
         daily_range = (round(swing_low, digits), round(swing_high, digits))
 
+    reference_gap_pct = ((price - reference) / max(abs(price), 1e-9)) * 100.0
+    trend_spread_pct = ((fast - slow) / max(abs(price), 1e-9)) * 100.0
+    ema9, ema20 = float(latest["EMA9"]), float(latest["EMA20"])
     return {
         "action": action, "reasons": reasons, "side": side, "score": score,
         "price": price, "vwap": vwap, "rsi": rsi,
         "ideal_buy": ideal_buy, "ideal_sell": ideal_sell, "stop": stop,
-        "stop_dist": abs(ideal_buy - stop), "hourly_target": hourly_target,
-        "daily_target": daily_target, "daily_range": daily_range,
-        "long_score": long_score, "short_score": short_score,
-        "vwap_gap_pct": ((price - vwap) / price) * 100,
-        "ema_spread_pct": ((ema9 - ema20) / price) * 100,
-        "volume_ratio": vol / max(vol_ma, 1.0),
-        "above_vwap": bool(above_vwap),
-        "ema_bullish": bool(ema_up),
-        "price_above_ema9": bool(price > ema9),
+        "stop_dist": abs(ideal_buy - stop),
+        "hourly_target": projection_one_target, "daily_target": projection_two_target,
+        "projection_one_target": projection_one_target, "projection_two_target": projection_two_target,
+        "projection_one_label": projection_one_label, "projection_two_label": projection_two_label,
+        "daily_range": daily_range, "long_score": long_score, "short_score": short_score,
+        "vwap_gap_pct": ((price - vwap) / max(abs(price), 1e-9)) * 100.0,
+        "ema_spread_pct": ((ema9 - ema20) / max(abs(price), 1e-9)) * 100.0,
+        "reference_gap_pct": reference_gap_pct, "trend_spread_pct": trend_spread_pct,
+        "trend_slope_pct": trend_slope_pct, "trend_bullish": bool(trend_up),
+        "trend_fast": fast, "trend_slow": slow,
+        "trend_fast_name": fast_name, "trend_slow_name": slow_name,
+        "reference_price": reference, "reference_name": reference_name,
+        "horizon": trading_horizon, "volume_ratio": vol_ratio,
+        "above_vwap": bool(price > vwap), "ema_bullish": bool(trend_up),
+        "price_above_ema9": bool(price > ema9), "price_above_trend_fast": bool(price > fast),
     }
 
-def get_higher_tf_bias(ticker, prepost, trend_interval="15m"):
-    """Return EMA trend confirmation for the user-selected timeframe."""
+def get_higher_tf_bias(ticker, prepost, trend_interval="15m", trading_horizon="Day Trading"):
+    """Compare trend averages on the separately selected confirmation interval."""
     try:
         df = get_intraday_data(ticker, trend_interval, prepost=prepost)
-        if len(df) < 25:
+        if df is None or df.empty or len(df) < 25:
             return "Not enough data"
-        df = add_indicators(df)
+        df = add_indicators(df, trading_horizon)
         latest = df.iloc[-1]
-        ema9 = float(latest["EMA9"])
-        ema20 = float(latest["EMA20"])
-        if ema9 > ema20:
+        if trading_horizon == "Day Trading":
+            fast, slow = float(latest["EMA9"]), float(latest["EMA20"])
+        elif trading_horizon == "Swing Trading":
+            fast, slow = float(latest["EMA20"]), float(latest["EMA50"])
+        else:
+            slow_period = 200 if len(df) >= 205 else (100 if len(df) >= 105 else 50)
+            fast_period = 50 if slow_period > 50 else 20
+            fast, slow = float(latest[f"EMA{fast_period}"]), float(latest[f"EMA{slow_period}"])
+        if fast > slow:
             return "🟢 Bullish (Up)"
-        if ema9 < ema20:
+        if fast < slow:
             return "🔴 Bearish (Down)"
         return "⚪ Neutral"
     except Exception:
@@ -1757,12 +1902,19 @@ def normalize_candidate_row(raw_row):
 def render_top_market_candidates(compact=False):
     """Poll a single background scan; retain the last good results during refresh."""
     if compact:
-        info_heading("⭐ Top Market Candidates", "Automatically refreshed ideas from a broad Yahoo Finance stock/ETF screener plus crypto discovery. The scanner rotates through symbols in batches; it cannot process every global listing simultaneously.", 3)
+        info_heading("⭐ Top Market Candidates", "Automatically refreshed ideas from a broad Yahoo Finance stock/ETF screener plus crypto discovery. It uses the selected trading horizon and rotates through symbols in batches; it cannot process every global listing simultaneously.", 3)
     else:
-        info_heading("⭐ Top Market Candidates", "Automatically refreshed ideas from a broad Yahoo Finance stock/ETF screener plus crypto discovery. The scanner rotates through symbols in batches; target distances are scenarios, not forecasts.", 2)
+        info_heading("⭐ Top Market Candidates", "Automatically refreshed ideas from a broad Yahoo Finance stock/ETF screener plus crypto discovery. The scanner uses the selected trading horizon and rotates through symbols in batches; target distances are scenarios, not forecasts.", 2)
 
     if st.button("↻ Refresh candidates", key="top_candidate_refresh", use_container_width=True):
         st.session_state["recommendation_force_refresh"] = True
+
+    scan_interval = {"Day Trading": "15m", "Swing Trading": "1d", "Long-Term Investing": "1wk"}.get(trading_horizon, "15m")
+    if st.session_state.get("recommendation_horizon") != trading_horizon:
+        st.session_state["recommendation_rows"] = []
+        st.session_state["recommendation_future"] = None
+        st.session_state["recommendation_requested_at"] = 0.0
+        st.session_state["recommendation_horizon"] = trading_horizon
 
     future = st.session_state.get("recommendation_future")
     requested_at = st.session_state.get("recommendation_requested_at", 0.0)
@@ -1779,9 +1931,9 @@ def render_top_market_candidates(compact=False):
         ))
         learning_snapshot = [dict(t) for t in st.session_state.get("paper_trades", []) if isinstance(t, dict)]
         future = get_market_scan_executor().submit(
-            scan_recommendation_candidates, "15m", False, 1.8,
+            scan_recommendation_candidates, scan_interval, False, 1.8,
             pinned_symbols, learning_snapshot,
-            int(st.session_state.get("market_scan_cursor", 0)), 30
+            int(st.session_state.get("market_scan_cursor", 0)), 30, trading_horizon
         )
         st.session_state["recommendation_future"] = future
         st.session_state["recommendation_requested_at"] = now_ts
@@ -1900,6 +2052,19 @@ with st.sidebar:
         index=0,
         help="Beginner mode explains signals in plain language. Advanced mode exposes more technical detail."
     )
+    trading_horizon = st.selectbox(
+        "Trading Horizon",
+        ["Day Trading", "Swing Trading", "Long-Term Investing"],
+        index=0,
+        key="trading_horizon",
+        help="Day Trading is the default. Swing Trading looks at multi-day moves. Long-Term Investing checks weekly/monthly trends. The selected horizon changes chart intervals, indicators, stops, targets and candidate scanning."
+    )
+    horizon_explainer = {
+        "Day Trading": "Day Trading · minutes to hours · 1m–1h charts",
+        "Swing Trading": "Swing Trading · several days to a few weeks · 30m–1wk charts",
+        "Long-Term Investing": "Long-Term Investing · weeks to months or longer · daily, weekly and monthly charts",
+    }
+    st.caption(horizon_explainer[trading_horizon])
 
     # Stock discovery and market candidates sit at the top of the left rail.
     info_heading("🔎 Find Stocks & Crypto", "Search stocks, ETFs, or crypto by name or ticker (for example Apple, NVDA, Bitcoin, or BTC-USD). Choose a result to load it or add it to your watchlist.", 3)
@@ -1943,13 +2108,37 @@ with st.sidebar:
     info_heading("📈 Chart & Risk Controls", "Set the chart display, confirmation timeframe, position sizing assumptions and account risk limits.", 3)
     chart_type = st.selectbox("Chart Style", ["Candlestick", "Line Chart"], index=0,
                               help="Candlesticks show open, high, low and close. Line charts connect closing prices.")
-    timeframe_options = ["1m", "2m", "5m", "15m", "30m", "60m"]
-    interval = st.selectbox("Chart Timeframe", timeframe_options, index=0,
-                            format_func=lambda value: "1h (60m)" if value == "60m" else value,
-                            help="Length represented by each chart candle. Shorter intervals move faster and can be noisier.")
-    trend_interval = st.selectbox("Trend Confirmation Timeframe", timeframe_options, index=3,
-                                  format_func=lambda value: "1h (60m)" if value == "60m" else value,
-                                  help="Independent timeframe used to check the broader short-term trend.")
+    horizon_timeframes = {
+        "Day Trading": {
+            "chart": ["1m", "2m", "5m", "15m", "30m", "60m"], "chart_default": "1m",
+            "confirm": ["5m", "15m", "30m", "60m", "1d"], "confirm_default": "15m",
+        },
+        "Swing Trading": {
+            "chart": ["30m", "60m", "1d", "1wk"], "chart_default": "1d",
+            "confirm": ["1d", "1wk", "1mo"], "confirm_default": "1wk",
+        },
+        "Long-Term Investing": {
+            "chart": ["1d", "1wk", "1mo"], "chart_default": "1wk",
+            "confirm": ["1wk", "1mo"], "confirm_default": "1mo",
+        },
+    }
+    active_timeframes = horizon_timeframes[trading_horizon]
+    timeframe_options = active_timeframes["chart"]
+    trend_options = active_timeframes["confirm"]
+    interval = st.selectbox(
+        "Chart Timeframe", timeframe_options,
+        index=timeframe_options.index(active_timeframes["chart_default"]),
+        key=f"chart_timeframe_{trading_horizon.replace(' ', '_')}",
+        format_func=lambda value: "1h (60m)" if value == "60m" else value,
+        help="Each candle covers this amount of time. Day trading uses minute charts; swing and long-term modes add daily, weekly and monthly candles."
+    )
+    trend_interval = st.selectbox(
+        "Trend Confirmation Timeframe", trend_options,
+        index=trend_options.index(active_timeframes["confirm_default"]),
+        key=f"trend_timeframe_{trading_horizon.replace(' ', '_')}",
+        format_func=lambda value: "1h (60m)" if value == "60m" else value,
+        help="A second, broader chart interval used to see whether the main trend agrees with the selected trading horizon."
+    )
     include_247 = st.checkbox("Include Extended Hours (Stocks / ETFs)", value=True,
                               help="Includes pre-market and after-hours bars for supported stocks and ETFs. Crypto trades 24/7 and does not use this setting.")
     st.session_state.account_size = st.number_input("Account Size ($)", min_value=50.0, max_value=1000000.0,
@@ -1983,17 +2172,23 @@ def render_dashboard():
             st.error("Could not load market data. Check the ticker; crypto symbols usually use the -USD format (for example BTC-USD).")
             return
 
-        df = add_indicators(df_raw)
+        df = add_indicators(df_raw, trading_horizon)
         fast_px = get_fast_quote(ticker)
         daily_stats = get_daily_stats(ticker)
-        sig = compute_price_targets_and_signal(df, fast_px, daily_stats, interval, rr_ratio)
+        sig = compute_price_targets_and_signal(df, fast_px, daily_stats, interval, rr_ratio, trading_horizon)
 
         price = sig["price"]
         
-        if "BUY NOW" in sig["action"] or "SHORT" in sig["action"]:
-            if st.session_state.last_alert_action != sig["action"]:
-                st.toast(f"🚨 ALERT: {sig['action']} on {ticker} @ ${price:,.{price_decimals(price)}f}!", icon="⚡")
-                st.session_state.last_alert_action = sig["action"]
+        confirmed_horizon_signal = (
+            sig.get("score", 0) >= 4
+            and sig.get("side") in {"LONG", "SHORT"}
+            and "WAIT" not in str(sig.get("action", "")).upper()
+        )
+        if confirmed_horizon_signal:
+            alert_key = f"{trading_horizon}:{sig['action']}"
+            if st.session_state.last_alert_action != alert_key:
+                st.toast(f"🚨 {trading_horizon} alert: {sig['action']} on {ticker} @ ${price:,.{price_decimals(price)}f}!", icon="⚡")
+                st.session_state.last_alert_action = alert_key
 
         last_bar_time = df.index[-1]
         try:
@@ -2022,7 +2217,7 @@ def render_dashboard():
         ticker_digits = price_decimals(price)
         asset_name = display_asset_name(ticker)
         st.markdown(f"## ⚡ {asset_name} ({ticker}) — ${price:,.{ticker_digits}f}")
-        st.caption(f"Chart: {interval}  •  Trend confirmation: {'1h' if trend_interval == '60m' else trend_interval}")
+        st.caption(f"{trading_horizon}  •  Chart: {interval}  •  Trend confirmation: {'1h' if trend_interval == '60m' else trend_interval}")
         st.caption(
             f"Session: **{session_label}**  •  EST Time: {now_est.strftime('%I:%M:%S %p')}  •  "
             f"Last Candle: {age_str}  •  Refresh: {refresh_sec}s"
@@ -2037,58 +2232,74 @@ def render_dashboard():
         # Metrics Row with Info Tooltips
         c1, c2, c3 = st.columns(3)
         c1.metric("Current Price", f"${price:,.{ticker_digits}f}", help="The latest available quote. Yahoo Finance data may be delayed.")
-        c2.metric("VWAP (Fair Value)", f"${sig['vwap']:,.{ticker_digits}f}", help="Volume-Weighted Average Price; a session reference, not a prediction.")
-        c3.metric("RSI (Momentum)", f"{sig['rsi']:.0f}", help="Momentum gauge from 0 to 100. It can remain high or low during strong trends.")
+        reference_help = "Volume-weighted average price for the current trading session." if trading_horizon == "Day Trading" else f"The {sig['reference_name']} is a smoothed price average used as the broader trend reference for this horizon."
+        c2.metric(f"{sig['reference_name']} Reference", f"${sig['reference_price']:,.{ticker_digits}f}", help=reference_help)
+        c3.metric("RSI (Momentum)", f"{sig['rsi']:.0f}", help="A speed gauge for recent price moves. It can stay high or low while a strong trend continues.")
         c4, c5 = st.columns(2)
         c4.metric("Setup Score", f"{sig['score']}/5", help="How many of the five technical checks are met. This is not a probability of success.")
-        trend_bias = get_higher_tf_bias(ticker, include_247, trend_interval)
+        trend_bias = get_higher_tf_bias(ticker, include_247, trend_interval, trading_horizon)
         c5.metric(
             f"{'1h' if trend_interval == '60m' else trend_interval} Trend",
             trend_bias,
-            help=f"EMA 9 versus EMA 20 trend confirmation on the selected {trend_interval} timeframe."
+            help=f"{trading_horizon} trend-average confirmation on the selected {trend_interval} timeframe."
         )
 
         # The local model learns only from closed paper trades with an entry-time snapshot.
-        adaptive_model = fit_adaptive_model(st.session_state.get("paper_trades", []), min_samples=20)
+        adaptive_model = fit_adaptive_model(st.session_state.get("paper_trades", []), min_samples=20, trading_horizon=trading_horizon)
         reward_assessment = build_reward_assessment(sig, adaptive_model, trend_bias, rr_ratio)
-        ai_estimate = reward_assessment.get("pattern_estimate")
         info_heading(
             f"🧠 AI Analysis — {asset_name} ({ticker})",
-            "Explains the selected asset's technical setup, target distance and (when enough of your closed paper trades exist) an experimental paper-history pattern estimate. Target distance is not a probability of success.",
+            "The technical-alignment percentage is the number of rule checks that agree, divided by five. It is not the chance of making money. Potential reward is the planned price move from entry to target, not a win probability.",
             3,
         )
         ai_c1, ai_c2, ai_c3 = st.columns(3)
+        alignment_pct = float(reward_assessment.get("technical_alignment_pct", 0.0))
+        checks_passed = int(reward_assessment.get("checks_passed", 0))
         if reward_assessment["side"] == "MIXED":
-            ai_c1.metric("Directional Assessment", "Mixed", f"Top score {reward_assessment['score']}/5")
-            ai_c2.metric("Potential Reward", "Not defined", help="The bullish and bearish checks are too close to define one clear target direction.")
-            ai_c2.markdown(percentage_indicator_html(0, label="→ Waiting for a clearer direction"), unsafe_allow_html=True)
+            ai_c1.metric(
+                "Directional Assessment", "Mixed",
+                f"Long {sig['long_score']}/5 · Short {sig['short_score']}/5",
+                help="Bullish and bearish checks are tied, so the app does not favor a direction."
+            )
+            ai_c2.metric("Potential Reward to Target", "—", help="No single direction is favored, so no directional target reward is presented.")
+            ai_c2.markdown(percentage_indicator_html(0, movement=0, label="→ Waiting for clearer direction"), unsafe_allow_html=True)
+            ai_c3.metric(
+                "Technical Alignment", f"{alignment_pct:.0f}%",
+                f"{checks_passed} of 5 checks on each side",
+                help="Share of the five technical checks that pass for each tied side. This is not a probability of profit."
+            )
+            ai_c3.markdown(percentage_indicator_html(alignment_pct, movement=0, label=f"→ {checks_passed}/5 checks · no directional edge"), unsafe_allow_html=True)
         else:
             side_label = "Bullish / Long" if reward_assessment["side"] == "LONG" else "Bearish / Short"
-            ai_c1.metric("AI Technical Assessment", reward_assessment["label"], f"{side_label} · {reward_assessment['score']}/5 checks")
+            ai_c1.metric("AI Technical Assessment", reward_assessment["label"], f"{side_label} · {checks_passed}/5 checks")
             ai_c2.metric(
                 "Potential Reward to Target",
-                f"{reward_assessment['potential_reward_pct']:+.2f}%",
-                help="Percentage distance from the planned entry to the illustrative target. This is a scenario size, not the chance that the target will be reached.",
+                f"+{reward_assessment['potential_reward_pct']:.2f}%" if reward_assessment.get("potential_reward_pct") is not None else "—",
+                help="Favorable price distance from the planned entry to target. Positive for both LONG and SHORT plans. It is not the chance that the target will be reached.",
             )
-            ai_direction = reward_assessment.get("side")
-            ai_move_sign = 1 if ai_direction == "LONG" else -1
-            ai_c2.markdown(
+            ai_move_sign = 1 if reward_assessment.get("side") == "LONG" else -1
+            if reward_assessment.get("potential_reward_pct") is not None:
+                ai_c2.markdown(
+                    percentage_indicator_html(
+                        reward_assessment["potential_reward_pct"],
+                        movement=ai_move_sign * reward_assessment["potential_reward_pct"],
+                        label=f"+{reward_assessment['potential_reward_pct']:.2f}% target reward · "
+                              f"risk {reward_assessment['risk_pct']:.2f}% · {reward_assessment['reward_to_risk']:.2f}:1 reward/risk",
+                    ),
+                    unsafe_allow_html=True,
+                )
+            ai_c3.metric(
+                "Technical Alignment", f"{alignment_pct:.0f}%",
+                f"{checks_passed} of 5 checks support {side_label}",
+                help="This is a simple count of the five technical checks that agree with the selected direction. It is not a win probability or forecast.",
+            )
+            ai_c3.markdown(
                 percentage_indicator_html(
-                    reward_assessment["potential_reward_pct"],
-                    movement=ai_move_sign * reward_assessment["potential_reward_pct"],
-                    label=f"{reward_assessment['potential_reward_pct']:+.2f}% target reward · "
-                          f"risk {reward_assessment['risk_pct']:.2f}% · {reward_assessment['reward_to_risk']:.2f}:1 R/R",
+                    alignment_pct,
+                    movement=ai_move_sign * alignment_pct,
+                    label=f"{('↑' if ai_move_sign > 0 else '↓')} {alignment_pct:.0f}% technical checks aligned",
                 ),
                 unsafe_allow_html=True,
-            )
-        if ai_estimate is None:
-            ai_c3.metric("AI Paper-History Estimate", "Learning", f"{adaptive_model['sample_count']}/{adaptive_model['min_samples']} closed trades")
-        else:
-            ai_c3.metric(
-                "AI Paper-History Estimate",
-                f"{ai_estimate * 100:.1f}%",
-                f"Based on {adaptive_model['sample_count']} closed trades",
-                help="Experimental logistic-model output trained on your closed paper trades. It is not a calibrated win probability, forecast or guarantee.",
             )
         with st.expander("Why the AI assessment looks this way", expanded=True):
             if reward_assessment["side"] == "MIXED":
@@ -2096,14 +2307,20 @@ def render_dashboard():
             else:
                 for reason in reward_assessment["reasons"]:
                     st.markdown(f"- {reason}")
-            if ai_estimate is None:
-                st.caption("No statistically reliable reward probability is available yet. The model remains in learning mode until it has at least 20 non-break-even closed paper trades with both wins and losses and saved entry-time snapshots.")
+            if not adaptive_model.get("active"):
+                st.caption(
+                    f"Paper-history model is learning: {adaptive_model['sample_count']}/{adaptive_model['min_samples']} "
+                    "eligible closed paper trades. The technical-alignment percentage above is calculated from the five rule checks and does not depend on this model."
+                )
             else:
-                st.caption("The AI percentage is a pattern estimate from your own paper-trade history. It is not independently validated or calibrated; use the five technical checks and the risk/target levels to understand the scenario.")
+                past_rate = adaptive_model.get("win_rate")
+                rate_text = f" Historical paper win rate: {past_rate * 100:.1f}%." if past_rate is not None else ""
+                st.caption(
+                    f"Paper-history model has {adaptive_model['sample_count']} closed examples.{rate_text} "
+                    "That win rate describes previous practice trades only; the model does not produce a calibrated probability for this setup."
+                )
 
         adaptive_side = "LONG" if sig["long_score"] >= sig["short_score"] else "SHORT"
-        adaptive_features = directional_learning_features(sig, adaptive_side)
-        adaptive_estimate = predict_adaptive_model(adaptive_model, adaptive_features)
         with st.expander("🧠 Adaptive AI Strategy Assistant — model details", expanded=False):
             info_heading(
                 "Learns from your paper-trading results",
@@ -2114,17 +2331,16 @@ def render_dashboard():
             ai_a.metric("Learning Trades", f"{adaptive_model['sample_count']}/{adaptive_model['min_samples']}")
             ai_b.metric("Your Recorded Win Rate", f"{adaptive_model['win_rate'] * 100:.1f}%" if adaptive_model.get("win_rate") is not None else "—")
             ai_c.metric("Model Status", "Learning" if not adaptive_model.get("active") else "Active")
-            if adaptive_estimate is None:
+            if not adaptive_model.get("active"):
                 render_terminal_notice(
                     "The model is still learning. Close at least 20 paper trades with saved signal snapshots and include both wins and losses. "
-                    "Until then, the terminal uses its transparent rule-based technical score.",
+                    "Until then, candidate ordering uses the visible technical score and target distance.",
                     kind="learning",
                 )
             else:
-                st.metric(
-                    f"Experimental {adaptive_side} Pattern Estimate",
-                    f"{adaptive_estimate * 100:.1f}%",
-                    help="Model output trained on your own closed paper trades. It is an experimental pattern estimate, not a calibrated probability or a forecast."
+                st.info(
+                    "The paper-history model is active as a secondary candidate-ranking helper when technical scores tie. "
+                    "Its raw model output is not shown as a percentage because it has not been independently calibrated as a win probability."
                 )
                 st.caption("The model updates on the next dashboard refresh after you close additional paper trades. It only adjusts candidate ordering when technical scores tie; the underlying signal rules remain visible and unchanged. Use it as extra research, not as an automatic trading instruction.")
             st.caption("Learning data stays in this Streamlit session. Restarting/clearing the session can remove the history; use the paper journal CSV export to keep a record.")
@@ -2134,8 +2350,8 @@ def render_dashboard():
             ac1, ac2, ac3, ac4 = st.columns(4)
             ac1.metric("ATR (Volatility)", f"${df.iloc[-1]['ATR']:,.{ticker_digits}f}", help="Average True Range measures how much the stock typically moves per candle.")
             ac2.metric("Volume vs MA", f"{df.iloc[-1]['Volume'] / max(df.iloc[-1]['Vol_MA'], 1):.2f}x", help="Current volume compared to its 8-period average. Higher means stronger interest.")
-            ac3.metric("EMA 9 / EMA 20 Spread", f"${df.iloc[-1]['EMA9'] - df.iloc[-1]['EMA20']:+,.{ticker_digits}f}", help="Distance between short-term trend averages.")
-            ac4.metric("Session High / Low", f"${df.tail(45)['High'].max():,.{ticker_digits}f} / ${df.tail(45)['Low'].min():,.{ticker_digits}f}", help="Highest and lowest prices reached in the current trading window.")
+            ac3.metric(f"{sig['trend_fast_name']} / {sig['trend_slow_name']} Spread", f"${sig['trend_fast'] - sig['trend_slow']:+,.{ticker_digits}f}", help="Distance between the two trend averages used for the selected trading horizon.")
+            ac4.metric("Recent High / Low", f"${df.tail(45)['High'].max():,.{ticker_digits}f} / ${df.tail(45)['Low'].min():,.{ticker_digits}f}", help="Highest and lowest prices in the most recent 45 candles on the selected timeframe.")
 
         info_heading("🎯 Live Price Targets & Trade Zones", "Entry gap is measured from the current quote. Target reward and stop risk are measured from the planned entry; reward stays positive for a valid SHORT target below entry.", 4)
         price_plan_side = sig["side"] if sig.get("side") in {"LONG", "SHORT"} else ("LONG" if sig["long_score"] >= sig["short_score"] else "SHORT")
@@ -2166,21 +2382,22 @@ def render_dashboard():
         )
         t3.markdown(percentage_indicator_html(-price_pcts["risk_pct"], movement=price_plan["stop"] - price_plan["entry"], label=f"-{price_pcts['risk_pct']:.2f}% planned risk"), unsafe_allow_html=True)
         h1, h2 = st.columns(2)
-        hourly_directional_pct = directional_price_move_pct(price, sig["hourly_target"], price_plan_side)
-        daily_directional_pct = directional_price_move_pct(price, sig["daily_target"], price_plan_side)
+        projection_one = float(sig["projection_one_target"])
+        projection_two = float(sig["projection_two_target"])
+        projection_one_pct = directional_price_move_pct(price, projection_one, price_plan_side)
+        projection_two_pct = directional_price_move_pct(price, projection_two, price_plan_side)
+        projection_help = "Volatility-based scenario using the selected chart interval and recent ATR. It is a planning reference, not a price forecast."
         h1.metric(
-            "1H Directional Projection",
-            f"${sig['hourly_target']:,.{ticker_digits}f}",
-            help="Estimated one-hour volatility projection. A positive percentage means movement in the selected LONG/SHORT direction; this is not a forecast."
+            sig["projection_one_label"], f"${projection_one:,.{ticker_digits}f}",
+            help=projection_help
         )
-        h1.markdown(percentage_indicator_html(hourly_directional_pct, movement=sig["hourly_target"] - price, label=f"{hourly_directional_pct:+.2f}% favorable-side move"), unsafe_allow_html=True)
+        h1.markdown(percentage_indicator_html(projection_one_pct, movement=projection_one - price, label=f"{projection_one_pct:+.2f}% favorable-side scenario"), unsafe_allow_html=True)
         h2.metric(
-            "Daily Directional Projection",
-            f"${sig['daily_target']:,.{ticker_digits}f}",
-            help=f"Estimated directional move from the current quote. Reference range: ${sig['daily_range'][0]:,.{ticker_digits}f} to ${sig['daily_range'][1]:,.{ticker_digits}f}. This is not a forecast."
+            sig["projection_two_label"], f"${projection_two:,.{ticker_digits}f}",
+            help=f"Longer-range volatility scenario. Recent daily reference range: ${sig['daily_range'][0]:,.{ticker_digits}f} to ${sig['daily_range'][1]:,.{ticker_digits}f}. This is not a forecast."
         )
-        h2.markdown(percentage_indicator_html(daily_directional_pct, movement=sig["daily_target"] - price, label=f"{daily_directional_pct:+.2f}% favorable-side move"), unsafe_allow_html=True)
-        st.caption("Arrow guide: ↑ price/return moving up · ↓ moving down · → nearly flat (within 0.05%). A ↓ arrow can still show a positive reward on a SHORT plan. Win-rate and AI-estimate percentages describe past patterns, not price direction.")
+        h2.markdown(percentage_indicator_html(projection_two_pct, movement=projection_two - price, label=f"{projection_two_pct:+.2f}% favorable-side scenario"), unsafe_allow_html=True)
+        st.caption("Arrow guide: ↑ price/return moving up · ↓ moving down · → nearly flat (within 0.05%). A ↓ arrow can still show a positive reward on a SHORT plan. Win-rate and AI percentages describe past patterns, not future certainty.")
         if sig.get("side") == "None":
             st.caption("No confirmed directional setup. The entry/stop/target values above are a reference plan based on the stronger score, not a trade signal.")
 
@@ -2195,7 +2412,10 @@ def render_dashboard():
 - **Ticker / Symbol**: A short name for a stock or coin. AAPL means Apple; BTC-USD means Bitcoin priced in US dollars.
 - **Current Price**: The latest price the app can find. It may be delayed, so it might not be the exact price you could trade at.
 - **Candle**: One bar on the chart. It shows where price started, where it went, and where it finished during that time.
-- **Timeframe**: How long each candle covers. A 5-minute chart makes one candle for every five minutes.
+- **Timeframe**: How long each candle covers. A 5-minute chart makes one candle every five minutes; a weekly chart makes one candle for a week.
+- **Day trading**: Buying and selling within the same day, usually using minute charts.
+- **Swing trading**: Holding a trade for a few days or weeks while trying to catch a larger price move.
+- **Long-term investing**: Holding a stock or coin for months or years, and focusing on the bigger trend instead of every small price change. Day Trading stays the default; you can switch horizons in the sidebar.
 - **VWAP**: An average price for the session that gives more weight to times when more shares or coins traded. Price above it can mean buyers are stronger; below it can mean sellers are stronger.
 - **RSI**: A speed gauge for price moves. A high reading means price has risen quickly; a low reading means it has fallen quickly. It does not tell you exactly when price will turn.
 - **EMA 9 / EMA 20**: Two smooth lines on the chart. The 9 line reacts faster. If it is above the 20 line, the recent move is leaning upward.
@@ -2204,6 +2424,7 @@ def render_dashboard():
 - **Volume vs. Average**: Compares today's candle volume with its usual amount. Above 1.0x means more activity than average.
 - **Setup Score (0–5)**: Counts how many of the app's five checks agree. A score of 4 does not mean an 80% chance of winning.
 - **Trend Confirmation**: Checks a second chart timeframe to see whether it points in the same direction.
+- **Trading Horizon**: Tells the app whether to focus on day trades, multi-day swing trades or longer-term positions. It changes the chart interval, moving averages, stop distance and target windows.
 - **LONG / Paper BUY**: A practice trade that makes money if the price goes up, before costs.
 - **SHORT / Paper SHORT**: A practice trade that makes money if the price goes down, before costs. Real short selling can have extra costs and risks.
 - **Entry Price**: The price where the practice trade starts.
@@ -2222,7 +2443,8 @@ def render_dashboard():
 - **Unrealized P&L**: The estimated profit or loss on trades that are still open. It can change as the price moves.
 - **Win Rate**: The percentage of closed practice trades that made money. A break-even trade is still included in the total number of trades.
 - **Trade Return %**: How big the gain or loss was compared with the amount used to open that practice trade.
-- **AI Paper-History Estimate**: A small model looking for patterns in your finished practice trades. It is still experimental and may be wrong.
+- **Technical Alignment %**: How many of the five chart checks agree with the current direction. For example, 4 out of 5 checks is 80%. This is not an 80% chance of winning.
+- **Paper-History Model**: A helper that looks for patterns in finished practice trades and can help sort similar candidates. It does not predict the chance that the next trade will win.
 - **Crypto Pair**: A coin's price compared with another currency. BTC-USD is the Bitcoin price in US dollars. Crypto markets run all day and night.
 - **BUY / SELL Marker**: A chart label showing where the app's rules first changed to a buy or sell signal. It is a signal from the rules, not a promise about what price will do next.
 - **Up / Down / Neutral icon**: Up means the measured price or return is rising; down means it is falling; sideways means the move is very small (less than 0.05%).
@@ -2230,13 +2452,13 @@ def render_dashboard():
         else:
             with st.expander("📘 Advanced Reference: Definitions & Methodology", expanded=False):
                 st.markdown("""
-- **VWAP**: Plain meaning: the session average price, giving more weight to busy periods. Technical detail: cumulative typical price × volume ÷ cumulative volume; it is a benchmark, not intrinsic value.
+- **VWAP**: Plain meaning: the average price traded during the current session, giving more weight to busy periods. Technical detail: cumulative typical price × volume ÷ cumulative volume; it is mainly used in day trading and is not intrinsic value.
 - **RSI (14)**: Plain meaning: a gauge of how quickly price has been moving. Technical detail: smoothed average gains versus losses, scaled from 0–100; 70/30 are guideposts, not automatic reversal signals.
-- **EMA 9 / EMA 20**: Plain meaning: two smooth price lines; the 9 line reacts faster. Technical detail: exponential moving averages weight recent prices more heavily; their gap is used as a short-term trend clue.
+- **EMA 9 / EMA 20 / EMA 50 / EMA 100 / EMA 200**: Plain meaning: smooth price lines that show the recent and bigger trend. Shorter averages react faster; longer averages react more slowly. Technical detail: exponential moving averages weight recent prices more heavily; the active horizon selects which pair is used for trend checks.
 - **ATR (14)**: Plain meaning: how much price has been swinging. Technical detail: a smoothed True Range using the largest of high–low, high–previous close, or low–previous close; it measures movement size, not direction.
 - **Volume Ratio**: Plain meaning: whether this candle is busier than usual. Technical detail: current bar volume ÷ recent moving average; the scanner checks for at least 0.85×.
-- **Setup Score**: Plain meaning: how many of five checks agree. Technical detail: price/VWAP, EMA alignment, price reclaim/EMA 9, volume threshold and RSI range; it is not a probability.
-- **Trend Confirmation**: Plain meaning: check a second chart interval for agreement. Technical detail: compare EMA 9 with EMA 20 on the separately selected timeframe; disagreement is a reason to be cautious.
+- **Setup Score**: Plain meaning: how many of five checks agree. Technical detail: the checks change with your horizon—VWAP and EMA 9/20 for day trading, EMA 20/50 for swing trading, and longer EMA pairs for long-term mode, plus volume and RSI. It is not a probability.
+- **Trend Confirmation**: Plain meaning: check a second chart interval for agreement. Technical detail: compare the moving averages assigned to the active horizon on the separately selected timeframe; disagreement is a reason to be cautious.
 - **ATR Stop Distance**: Plain meaning: give the stop some room for normal price swings. Technical detail: the calculator uses the larger of 1.25× ATR or 0.25% of price.
 - **Position Sizing**: Plain meaning: decide how many shares or coins fit your risk limit. Technical detail: quantity is limited by risk budget ÷ entry-to-stop distance and account buying power; stocks use whole shares, crypto can be fractional.
 - **Reward-to-Risk**: Plain meaning: compare the possible gain with the planned loss. Technical detail: entry-to-target distance ÷ entry-to-stop distance, before trading costs, slippage, borrow fees or taxes.
@@ -2244,7 +2466,8 @@ def render_dashboard():
 - **Potential Reward %**: Plain meaning: the size of the planned favorable move. Technical detail: direction-adjusted entry-to-target distance ÷ entry × 100; it is not the chance of reaching the target.
 - **Stop Risk %**: Plain meaning: how far away the protective stop is. Technical detail: direction-adjusted entry-to-stop distance ÷ entry × 100; this is not the percentage of the whole account at risk.
 - **Paper Trade Return %**: Plain meaning: the gain or loss on one practice trade compared with its entry value. Technical detail: direction-adjusted P&L ÷ (entry × shares/units) × 100. Portfolio return instead compares total paper equity with the starting balance.
-- **AI Pattern Estimate**: Plain meaning: a pattern score learned from your completed practice trades. Technical detail: logistic-model output from saved entry snapshots; the sample is small and not independently calibrated, so it is not a forecast.
+- **Technical Alignment %**: Plain meaning: how many of the five chart checks agree with the chosen direction. Technical detail: directional setup score ÷ 5 × 100; it measures rule agreement, not win probability.
+- **Paper-History Model**: Plain meaning: looks for patterns in your finished practice trades. Technical detail: a small logistic model trained on saved entry snapshots; its raw output is used only for secondary candidate sorting because it is not independently calibrated as a win probability.
 - **Historical Practice Replay**: One hypothetical entry on a historical candle, followed by a fixed number of candles. If a bar touches both stop and target, the simulator assumes the stop occurs first.
 - **Data Limitations**: Plain meaning: prices or charts may be late or incomplete. Technical detail: Yahoo Finance intervals, screeners and quotes may be delayed, missing or rate-limited.
 - **Percentage Direction Icons**: ↑ means up, ↓ means down, and → means nearly flat (within 0.05%). The arrow shows price/return direction, not whether a LONG or SHORT trade is profitable.
@@ -2254,7 +2477,7 @@ def render_dashboard():
             st.markdown("---")
             info_heading("🎓 Beginner Learning Lab", "Learn the terms with a short factual quiz and practice one hypothetical LONG or SHORT on historical candles from the currently selected asset. The exercise does not use real money.", 3)
             render_beginner_quiz()
-            render_historical_practice_simulator(df, ticker, rr_ratio)
+            render_historical_practice_simulator(df, ticker, rr_ratio, trading_horizon)
 
         # Full-width, automatic Quick Trade Execution. Build a separate calculator
         # for each side so the SHORT button never inherits the LONG quantity/levels.
@@ -2349,6 +2572,7 @@ def render_dashboard():
                 "id": str(uuid.uuid4())[:8],
                 "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
                 "ticker": ticker,
+                "trading_horizon": trading_horizon,
                 "side": "LONG",
                 "entry": float(long_plan["entry"]),
                 "stop": float(long_plan["stop"]),
@@ -2374,6 +2598,7 @@ def render_dashboard():
                 "id": str(uuid.uuid4())[:8],
                 "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
                 "ticker": ticker,
+                "trading_horizon": trading_horizon,
                 "side": "SHORT",
                 "entry": float(short_plan["entry"]),
                 "stop": float(short_plan["stop"]),
@@ -2427,7 +2652,8 @@ def render_dashboard():
             )
 
         # ---------- DYNAMIC CHART WITH ZOOM / TOOLBAR & MARKERS ----------
-        info_heading("📊 Live Price Chart", "Candles show open, high, low and close. VWAP is a volume-weighted session reference; EMA lines smooth price trends; volume bars show trading activity.", 4)
+        chart_explanation = "Candles show open, high, low and close. VWAP and EMA 9/20 help with intraday context." if trading_horizon == "Day Trading" else ("Candles show open, high, low and close. EMA 20/50 show the swing trend." if trading_horizon == "Swing Trading" else f"Candles show open, high, low and close. {sig['trend_fast_name']} and {sig['trend_slow_name']} show the broader trend.")
+        info_heading("📊 Price Chart", chart_explanation + " Green BUY and red SELL markers show where the selected horizon's rules first changed signal.", 4)
         plot_df = df.tail(90)
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.78, 0.22], vertical_spacing=0.02)
 
@@ -2445,9 +2671,18 @@ def render_dashboard():
                 line=dict(color="#4c8dff", width=2.2)
             ), row=1, col=1)
 
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["VWAP"], name="VWAP", line=dict(color="#4da3ff", width=1.7)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA9"], name="EMA 9", line=dict(color="#f0b90b", width=1.2)), row=1, col=1)
-        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA20"], name="EMA 20", line=dict(color="#9b8cff", width=1.2)), row=1, col=1)
+        if trading_horizon == "Day Trading":
+            fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["VWAP"], name="VWAP", line=dict(color="#4da3ff", width=1.7)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA9"], name="EMA 9", line=dict(color="#f0b90b", width=1.2)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA20"], name="EMA 20", line=dict(color="#9b8cff", width=1.2)), row=1, col=1)
+        elif trading_horizon == "Swing Trading":
+            fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA20"], name="EMA 20", line=dict(color="#f0b90b", width=1.4)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["EMA50"], name="EMA 50", line=dict(color="#9b8cff", width=1.5)), row=1, col=1)
+        else:
+            slow_chart_period = 200 if len(df) >= 205 else (100 if len(df) >= 105 else 50)
+            fast_chart_period = 50 if slow_chart_period > 50 else 20
+            fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df[f"EMA{fast_chart_period}"], name=f"EMA {fast_chart_period}", line=dict(color="#f0b90b", width=1.5)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df[f"EMA{slow_chart_period}"], name=f"EMA {slow_chart_period}", line=dict(color="#9b8cff", width=1.6)), row=1, col=1)
 
         # Draw a marker only when the signal changes into BUY or SELL. This keeps
         # the chart clean while making each new setup easy to spot.
@@ -2489,7 +2724,8 @@ def render_dashboard():
             y=price_plan["stop"], line_dash="dash", line_color="#f23645",
             annotation_text=f"Stop Loss ${price_plan['stop']:,.{ticker_digits}f}", row=1, col=1
         )
-        fig.add_hline(y=sig["hourly_target"], line_dash="dash", line_color="#06b6d4", annotation_text=f"1H Target ${sig['hourly_target']:,.{ticker_digits}f}", row=1, col=1)
+        fig.add_hline(y=sig["projection_one_target"], line_dash="dash", line_color="#06b6d4", annotation_text=f"{sig['projection_one_label']} ${sig['projection_one_target']:,.{ticker_digits}f}", row=1, col=1)
+        fig.add_hline(y=sig["projection_two_target"], line_dash="dot", line_color="#c792ea", annotation_text=f"{sig['projection_two_label']} ${sig['projection_two_target']:,.{ticker_digits}f}", row=1, col=1)
 
         bar_colors = ["#089981" if c >= o else "#f23645" for c, o in zip(plot_df["Close"], plot_df["Open"])]
         fig.add_trace(go.Bar(x=plot_df.index, y=plot_df["Volume"], name="Volume", marker_color=bar_colors, opacity=0.6), row=2, col=1)
@@ -2612,6 +2848,7 @@ def render_dashboard():
                         "id": str(uuid.uuid4())[:8],
                         "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M"),
                         "ticker": manual_ticker, "side": manual_side,
+                        "trading_horizon": trading_horizon,
                         "entry": float(manual_entry), "stop": float(manual_stop),
                         "target": float(manual_target), "shares": float(manual_qty),
                         "status": "OPEN", "exit": None, "pnl": None, "notes": manual_notes,
@@ -2633,7 +2870,7 @@ def render_dashboard():
                 target_hit = live_px >= float(trade["target"]) if trade["side"] == "LONG" else live_px <= float(trade["target"])
                 with st.container(border=True):
                     h1, h2, h3, h4 = st.columns([1.3, 1, 1, 1])
-                    h1.markdown(f"**{display_asset_name(trade_ticker)}**  \n`{trade_ticker}` · {trade['side']} · {float(trade['shares']):,.6f} {unit}")
+                    h1.markdown(f"**{display_asset_name(trade_ticker)}**  \n`{trade_ticker}` · {trade['side']} · {float(trade['shares']):,.6f} {unit} · {trade.get('trading_horizon', 'Older trade')}")
                     h2.metric("Entry / Mark", f"${float(trade['entry']):,.{digits}f}", f"Mark ${live_px:,.{digits}f}")
                     h3.metric("Stop / Target", f"${float(trade['stop']):,.{digits}f}", f"Target ${float(trade['target']):,.{digits}f}")
                     open_return_pct = paper_trade_return_pct(unrealized, trade["entry"], trade["shares"])
@@ -2697,7 +2934,7 @@ def render_dashboard():
             eq.update_layout(paper_bgcolor="#131722", plot_bgcolor="#1e222d", font=dict(color="#e0e5ee", family="Arial, sans-serif", size=13), height=340, margin=dict(l=14, r=14, t=48, b=14), xaxis=dict(gridcolor="#2a2e39", tickfont=dict(color="#aeb8c8", size=12)), yaxis=dict(gridcolor="#2a2e39", tickfont=dict(color="#aeb8c8", size=12), title="P&L ($)"))
             eq.update_traces(line_color="#10b981" if sum(pnl_values) >= 0 else "#ef4444", line_width=3)
             st.plotly_chart(eq, use_container_width=True)
-            display_cols = [c for c in ["time", "closed_at", "ticker", "side", "entry", "exit", "stop", "target", "shares", "pnl", "return_pct", "notes"] if c in cdf.columns]
+            display_cols = [c for c in ["time", "closed_at", "ticker", "side", "trading_horizon", "entry", "exit", "stop", "target", "shares", "pnl", "return_pct", "notes"] if c in cdf.columns]
             st.dataframe(cdf[display_cols], use_container_width=True, hide_index=True)
             csv_export = cdf.copy()
             if "ai_features" in csv_export.columns:
@@ -2737,7 +2974,7 @@ st.markdown("""
 <div class="terminal-hero">
   <div class="terminal-kicker">Market-wide discovery · adaptive learning · simulated execution</div>
   <h1>⚡ PRO DAY TRADE TERMINAL</h1>
-  <p>A market-discovery trading workspace with multi-timeframe analysis, adaptive paper-trade learning, risk planning and simulated execution.</p>
+  <p>A day-trading-first workspace with optional swing and long-term analysis, market discovery, adaptive paper-trade learning, risk planning and simulated execution.</p>
 </div>
 """, unsafe_allow_html=True)
 
