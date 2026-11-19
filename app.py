@@ -727,6 +727,151 @@ section[data-testid="stSidebar"] p {
   [data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) { padding: 7px 8px 6px !important; }
 }
 
+
+/* Final alignment pass: use one sizing model for every bordered surface. */
+*, *::before, *::after { box-sizing: border-box; }
+[data-testid="stVerticalBlockBorderWrapper"] {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  border-radius: 8px !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] > div {
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+/* Streamlit columns stretch their contents to the same row width. */
+div[data-testid="stHorizontalBlock"] {
+  align-items: stretch !important;
+}
+div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+div[data-testid="column"] > div,
+div[data-testid="column"] [data-testid="stVerticalBlock"] {
+  min-width: 0 !important;
+}
+/* Metrics in a row share a consistent height and border weight. */
+[data-testid="stMetric"] {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 104px !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  border: 1px solid #343b49 !important;
+  border-radius: 8px !important;
+  box-sizing: border-box !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+  overflow-wrap: anywhere !important;
+  font-variant-numeric: tabular-nums;
+}
+/* Native bordered panels use the same restrained edge and inner spacing. */
+[data-testid="stVerticalBlockBorderWrapper"]:not(:has(.pct-card-marker)):not(:has(.robinhood-panel-marker)) {
+  border-color: #343b49 !important;
+  border-radius: 8px !important;
+}
+/* Keep percentage and handoff cards on the same outer alignment grid. */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker),
+[data-testid="stVerticalBlockBorderWrapper"]:has(.robinhood-panel-marker) {
+  width: 100% !important;
+  height: 100% !important;
+  box-sizing: border-box !important;
+}
+/* Compact buy-alert price cells line up even when values have different lengths. */
+.priority-buy-card {
+  width: 100%;
+  min-width: 0;
+  min-height: 154px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  margin: 8px 0;
+  border: 1px solid #365b59;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #172b2b, #151e2c);
+}
+.priority-buy-card .priority-buy-levels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 9px;
+}
+.priority-buy-card .priority-buy-level {
+  min-width: 0;
+  min-height: 54px;
+  padding: 7px 8px;
+  border: 1px solid #2d4547;
+  border-radius: 6px;
+  background: #1b3030;
+  overflow-wrap: anywhere;
+}
+.priority-buy-card .priority-buy-level b {
+  display: block;
+  margin-top: 2px;
+  color: #edf5f5;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-size: 13px;
+}
+/* All AI and paper-desk metric cards use one shared outer border and equal row height. */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 132px !important;
+  height: 100% !important;
+  border: 1px solid #343b49 !important;
+  border-radius: 8px !important;
+  padding: 10px 11px !important;
+  background: #1e222d !important;
+  box-sizing: border-box !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) [data-testid="stMetric"] {
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) [data-testid="stMarkdownContainer"] {
+  min-width: 0 !important;
+  overflow-wrap: anywhere !important;
+}
+.suggested-asset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  margin: 6px 0;
+  padding: 9px 10px;
+  border: 1px solid #343b49;
+  border-radius: 7px;
+  background: #191f2b;
+  box-sizing: border-box;
+}
+.suggested-asset-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.suggested-asset-main b { color: #edf1f8; overflow-wrap: anywhere; font-size: 12px; }
+.suggested-asset-main span { color: #929bab; font-size: 10px; overflow-wrap: anywhere; }
+.suggested-asset-reward { flex: 0 0 auto; color: #70d6ac; font-weight: 700; font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.suggested-asset-reward small { display: block; color: #929bab; font-size: 9px; font-weight: 500; }
+@media (max-width: 700px) {
+  [data-testid="stMetric"] { min-height: 88px !important; }
+  .priority-buy-card { min-height: 0; }
+  .priority-buy-card .priority-buy-levels { gap: 5px; }
+  .priority-buy-card .priority-buy-level { padding: 6px 5px; }
+  .priority-buy-card .priority-buy-level b { font-size: 12px; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -989,6 +1134,14 @@ def render_percentage_metric(column, label, value, indicator_html, help_text=Non
             st.markdown('<span class="pct-card-marker"></span>', unsafe_allow_html=True)
             st.metric(label, value, help=help_text)
             st.markdown(indicator_html, unsafe_allow_html=True)
+
+
+def render_standard_metric(column, label, value, delta=None, help_text=None):
+    """Render a standard metric in the same outer card grid as percentage metrics."""
+    with column:
+        with st.container(border=True):
+            st.markdown('<span class="pct-card-marker"></span>', unsafe_allow_html=True)
+            st.metric(label, value, delta, help=help_text)
 
 
 def paper_trade_return_pct(pnl, entry_price, quantity):
@@ -2091,18 +2244,56 @@ def render_top_market_candidates(compact=False):
             risk_pct = abs((entry - stop) / max(entry, 0.000001)) * 100
             reward_pct = abs((target - entry) / max(entry, 0.000001)) * 100
             st.markdown(
-                f'<div style="padding:10px 11px;margin:7px 0;border:1px solid #236b5d;border-radius:9px;background:linear-gradient(135deg,#142b2a,#111d2b)">'
-                f'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">'
-                f'<b style="color:#e8fff8">{rank}. {html.escape(row["Asset Name"])}</b>'
-                f'<span style="font-size:11px;color:#7fe0bd;border:1px solid #236b5d;border-radius:12px;padding:2px 7px">BUY SETUP</span></div>'
-                f'<div style="display:flex;justify-content:space-between;gap:8px;margin-top:5px"><b style="color:#8ed8ff">{html.escape(row["Symbol"])}</b><b>${float(row["Price"]):,.{digits}f}</b></div>'
-                f'<div style="color:#aeb8c8;font-size:12px;margin-top:3px">{html.escape(row["Asset Type"])} · Score {row["_score"]}/5 · Volume {float(row["_volume_ratio"]):.2f}× average</div>'
-                f'<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:8px">'
-                f'<div style="background:#1b3030;border-radius:6px;padding:6px"><small style="color:#aeb8c8">Entry</small><br><b>${entry:,.{digits}f}</b></div>'
-                f'<div style="background:#1b3030;border-radius:6px;padding:6px"><small style="color:#aeb8c8">Stop · {risk_pct:.1f}%</small><br><b>${stop:,.{digits}f}</b></div>'
-                f'<div style="background:#1b3030;border-radius:6px;padding:6px"><small style="color:#aeb8c8">Target · +{reward_pct:.1f}%</small><br><b>${target:,.{digits}f}</b></div>'
+                f'<div class="priority-buy-card">'
+                f'<div><div style="display:flex;justify-content:space-between;gap:8px;align-items:center">'
+                f'<b style="color:#e8fff8;min-width:0;overflow-wrap:anywhere">{rank}. {html.escape(row["Asset Name"])}</b>'
+                f'<span style="flex:0 0 auto;font-size:11px;color:#7fe0bd;border:1px solid #365b59;border-radius:12px;padding:3px 8px">BUY SETUP</span></div>'
+                f'<div style="display:flex;justify-content:space-between;gap:8px;margin-top:6px"><b style="color:#8ed8ff">{html.escape(row["Symbol"])}</b><b style="font-variant-numeric:tabular-nums">${float(row["Price"]):,.{digits}f}</b></div>'
+                f'<div style="color:#aeb8c8;font-size:12px;margin-top:3px">{html.escape(row["Asset Type"])} · Score {row["_score"]}/5 · Volume {float(row["_volume_ratio"]):.2f}× average</div></div>'
+                f'<div class="priority-buy-levels">'
+                f'<div class="priority-buy-level"><small style="color:#aeb8c8">Entry</small><b>${entry:,.{digits}f}</b></div>'
+                f'<div class="priority-buy-level"><small style="color:#aeb8c8">Stop · {risk_pct:.1f}%</small><b>${stop:,.{digits}f}</b></div>'
+                f'<div class="priority-buy-level"><small style="color:#aeb8c8">Target · +{reward_pct:.1f}%</small><b>${target:,.{digits}f}</b></div>'
                 f'</div></div>', unsafe_allow_html=True
             )
+        # Keep a broader discovery shortlist separate from the stricter alert board.
+        # This restores the compact suggested-assets list without changing the rest of the sidebar.
+        suggested = [
+            row for row in bullish
+            if float(row.get("_reward_pct", row.get("Potential %", 0)) or 0) > 0
+            and int(row.get("_score", 0) or 0) >= 3
+        ]
+        suggested.sort(
+            key=lambda row: (
+                float(row.get("_reward_pct", row.get("Potential %", 0)) or 0),
+                int(row.get("_score", 0) or 0),
+                float(row.get("_volume_ratio", 0) or 0),
+            ), reverse=True
+        )
+        suggested = suggested[:5]
+        st.markdown("#### 💡 Suggested Stocks & Crypto")
+        st.caption("Bullish research shortlist ranked by scenario reward, technical score and volume. These are watchlist ideas, not guaranteed returns.")
+        if suggested:
+            for row in suggested:
+                reward_pct = float(row.get("_reward_pct", row.get("Potential %", 0)) or 0)
+                score = int(row.get("_score", 0) or 0)
+                st.markdown(
+                    '<div class="suggested-asset-row">'
+                    f'<div class="suggested-asset-main"><b>{html.escape(str(row["Asset Name"]))}</b>'
+                    f'<span>{html.escape(str(row["Symbol"]))} · {html.escape(str(row["Asset Type"]))} · Score {score}/5</span></div>'
+                    f'<div class="suggested-asset-reward">+{reward_pct:.1f}%<small>scenario</small></div>'
+                    '</div>', unsafe_allow_html=True
+                )
+            suggested_choices = [row["Symbol"] for row in suggested]
+            suggested_choice = st.selectbox(
+                "Load suggested asset", suggested_choices, key="suggested_asset_pick_sidebar"
+            )
+            if st.button("Load suggested asset", key="suggested_asset_load_sidebar", use_container_width=True):
+                st.session_state.active_ticker = suggested_choice
+                st.rerun()
+        else:
+            st.info("No bullish shortlist is available yet. The scanner will add ideas as fresh results arrive.")
+
         choices = [row["Symbol"] for row in priority_buys] or [row["Symbol"] for row in candidates]
         chosen = st.selectbox("Load candidate", choices, key="top_candidate_pick_sidebar")
         if st.button("Load selected candidate", key="top_candidate_load_sidebar", use_container_width=True):
@@ -2363,10 +2554,10 @@ def render_dashboard():
         alignment_pct = float(reward_assessment.get("technical_alignment_pct", 0.0))
         checks_passed = int(reward_assessment.get("checks_passed", 0))
         if reward_assessment["side"] == "MIXED":
-            ai_c1.metric(
-                "Directional Assessment", "Mixed",
+            render_standard_metric(
+                ai_c1, "Directional Assessment", "Mixed",
                 f"Long {sig['long_score']}/5 · Short {sig['short_score']}/5",
-                help="Bullish and bearish checks are tied, so the app does not favor a direction."
+                help_text="Bullish and bearish checks are tied, so the app does not favor a direction."
             )
             render_percentage_metric(
                 ai_c2, "Potential Reward to Target", "—",
@@ -2380,7 +2571,11 @@ def render_dashboard():
             )
         else:
             side_label = "Bullish / Long" if reward_assessment["side"] == "LONG" else "Bearish / Short"
-            ai_c1.metric("AI Technical Assessment", reward_assessment["label"], f"{side_label} · {checks_passed}/5 checks")
+            render_standard_metric(
+                ai_c1, "AI Technical Assessment", reward_assessment["label"],
+                f"{side_label} · {checks_passed}/5 checks",
+                help_text="The technical direction with the stronger rule-check score. It is an assessment, not a guarantee or calibrated probability."
+            )
             ai_move_sign = 1 if reward_assessment.get("side") == "LONG" else -1
             reward_value = reward_assessment.get("potential_reward_pct")
             reward_label = (
@@ -2908,15 +3103,15 @@ def render_dashboard():
         portfolio_equity = float(st.session_state.account_size) + realized_pnl + unrealized_pnl
         total_return = ((portfolio_equity / float(st.session_state.account_size)) - 1) * 100 if st.session_state.account_size else 0.0
 
-        p1, p2, p3, p4, p5 = st.columns(5)
-        p1.metric("Paper Starting Balance", f"${st.session_state.account_size:,.2f}")
+        p1, p2, p3, p4, p5 = st.columns(5, gap="small")
+        render_standard_metric(p1, "Paper Starting Balance", f"${st.session_state.account_size:,.2f}")
         render_percentage_metric(
             p2, "Paper Portfolio Equity", f"${portfolio_equity:,.2f}",
             percentage_indicator_html(total_return, label=f"{total_return:+.2f}% vs start"),
         )
-        p3.metric("Realized P&L", f"${realized_pnl:+,.2f}")
-        p4.metric("Open P&L", f"${unrealized_pnl:+,.2f}")
-        p5.metric("Open Positions", str(len(open_trades)))
+        render_standard_metric(p3, "Realized P&L", f"${realized_pnl:+,.2f}")
+        render_standard_metric(p4, "Open P&L", f"${unrealized_pnl:+,.2f}")
+        render_standard_metric(p5, "Open Positions", str(len(open_trades)))
         st.caption(
             "Paper portfolio return = (paper equity ÷ paper starting balance − 1). "
             "Each trade's return % below uses its own entry notional (entry price × shares/units). "
