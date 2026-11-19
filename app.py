@@ -1110,6 +1110,68 @@ div[data-testid="column"] [data-testid="stVerticalBlock"] {
   }
 }
 
+
+
+/* ---------- Final alignment: AI and trade-zone cards ---------- */
+/* Place percentage pills slightly inside the card, rather than straddling its border. */
+.terminal-pct-card {
+  padding: 35px 15px 13px !important;
+  min-height: 112px !important;
+}
+.terminal-pct-badge {
+  top: 7px !important;
+  right: 12px !important;
+  transform: none !important;
+}
+.terminal-pct-card .pct-indicator {
+  box-shadow: none !important;
+}
+.terminal-text-card {
+  justify-content: flex-start !important;
+  padding-top: 17px !important;
+}
+.terminal-text-card .terminal-pct-label:first-child {
+  margin-bottom: 8px !important;
+}
+.terminal-text-card .terminal-pct-value {
+  margin-bottom: 5px !important;
+}
+.terminal-metric-detail {
+  margin: 1px 0 0 !important;
+  color: #aebbd0 !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+}
+@media (max-width: 700px) {
+  .terminal-pct-card {
+    min-height: 108px !important;
+    padding: 33px 10px 11px !important;
+  }
+  .terminal-pct-badge {
+    top: 6px !important;
+    right: 9px !important;
+  }
+  .terminal-text-card {
+    padding-top: 14px !important;
+  }
+}
+
+/* Streamlit bordered percentage cards: lower the badge and reserve matching space. */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) {
+  padding-top: 49px !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) .pct-indicator {
+  top: 13px !important;
+}
+@media (max-width: 700px) {
+  [data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) {
+    padding-top: 46px !important;
+  }
+  [data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) .pct-indicator {
+    top: 11px !important;
+  }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1380,6 +1442,28 @@ def render_percentage_metric(column, label, value, indicator_html, help_text=Non
             '<div class="terminal-pct-badge">' + indicator_html + '</div>'
             '<div class="terminal-pct-label">' + safe_label + '</div>'
             '<div class="terminal-pct-value">' + safe_value + '</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+
+
+def render_matching_metric(column, label, value, detail=None, help_text=None):
+    """Render a text-only metric using the same card surface as percentage metrics."""
+    safe_label = html.escape(str(label))
+    safe_value = html.escape(str(value))
+    safe_detail = html.escape(str(detail or ""))
+    safe_help = html.escape(str(help_text or ""), quote=True)
+    detail_html = (
+        f'<div class="terminal-pct-label terminal-metric-detail">{safe_detail}</div>'
+        if safe_detail else ""
+    )
+    with column:
+        st.markdown(
+            '<div class="terminal-pct-card terminal-text-card" title="' + safe_help + '">'
+            '<div class="terminal-pct-label">' + safe_label + '</div>'
+            '<div class="terminal-pct-value">' + safe_value + '</div>'
+            + detail_html +
             '</div>',
             unsafe_allow_html=True,
         )
@@ -2843,7 +2927,7 @@ def render_dashboard():
         alignment_pct = float(reward_assessment.get("technical_alignment_pct", 0.0))
         checks_passed = int(reward_assessment.get("checks_passed", 0))
         if reward_assessment["side"] == "MIXED":
-            render_standard_metric(
+            render_matching_metric(
                 ai_c1, "Directional Assessment", "Mixed",
                 f"Long {sig['long_score']}/5 · Short {sig['short_score']}/5",
                 help_text="Bullish and bearish checks are tied, so the app does not favor a direction."
@@ -2860,7 +2944,7 @@ def render_dashboard():
             )
         else:
             side_label = "Bullish / Long" if reward_assessment["side"] == "LONG" else "Bearish / Short"
-            render_standard_metric(
+            render_matching_metric(
                 ai_c1, "AI Technical Assessment", reward_assessment["label"],
                 f"{side_label} · {checks_passed}/5 checks",
                 help_text="The technical direction with the stronger rule-check score. It is an assessment, not a guarantee or calibrated probability."
