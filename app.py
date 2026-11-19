@@ -822,17 +822,38 @@ div[data-testid="column"] [data-testid="stVerticalBlock"] {
 }
 /* All AI and paper-desk metric cards use one shared outer border and equal row height. */
 [data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) {
+  position: relative !important;
   width: 100% !important;
   min-width: 0 !important;
-  min-height: 132px !important;
+  min-height: 142px !important;
   height: 100% !important;
-  border: 1px solid #343b49 !important;
-  border-radius: 8px !important;
-  padding: 10px 11px !important;
-  background: #1e222d !important;
+  border: 1px solid #3b4d66 !important;
+  border-radius: 9px !important;
+  padding: 43px 11px 10px !important;
+  background: linear-gradient(145deg, #202a3b 0%, #1b2230 100%) !important;
+  box-shadow: 0 3px 12px rgba(0,0,0,.14) !important;
   box-sizing: border-box !important;
 }
+/* The percentage badge sits against the card's top edge like a bordered status tab. */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) .pct-indicator {
+  position: absolute !important;
+  top: 8px !important;
+  right: 10px !important;
+  left: 10px !important;
+  width: fit-content !important;
+  max-width: calc(100% - 20px) !important;
+  min-height: 24px !important;
+  margin: 0 !important;
+  padding: 4px 9px !important;
+  border-radius: 6px !important;
+  font-size: 12.5px !important;
+  line-height: 1.25 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  z-index: 2 !important;
+}
 [data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) [data-testid="stMetric"] {
+  min-width: 0 !important;
   min-height: 0 !important;
   height: auto !important;
   padding: 0 !important;
@@ -841,9 +862,34 @@ div[data-testid="column"] [data-testid="stVerticalBlock"] {
   background: transparent !important;
   box-shadow: none !important;
 }
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) [data-testid="stMetricLabel"] {
+  margin-bottom: 5px !important;
+  color: #aebbd0 !important;
+  font-size: 12px !important;
+  line-height: 1.3 !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) [data-testid="stMetricValue"] {
+  color: #f0f4fb !important;
+  font-size: clamp(19px, 2vw, 27px) !important;
+  line-height: 1.2 !important;
+  overflow-wrap: anywhere !important;
+  font-variant-numeric: tabular-nums;
+}
 [data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) [data-testid="stMarkdownContainer"] {
   min-width: 0 !important;
   overflow-wrap: anywhere !important;
+}
+@media (max-width: 700px) {
+  [data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) {
+    min-height: 136px !important;
+    padding: 40px 8px 8px !important;
+  }
+  [data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) .pct-indicator {
+    left: 8px !important;
+    right: 8px !important;
+    max-width: calc(100% - 16px) !important;
+    font-size: 11.5px !important;
+  }
 }
 .suggested-asset-row {
   display: flex;
@@ -2632,8 +2678,7 @@ def render_dashboard():
                 percentage_indicator_html(
                     reward_value,
                     movement=ai_move_sign * reward_value,
-                    label=f"+{reward_value:.2f}% target reward · risk {reward_assessment['risk_pct']:.2f}% · "
-                          f"{reward_assessment['reward_to_risk']:.2f}:1 reward/risk",
+                    label=f"+{reward_value:.2f}% target reward",
                 ) if reward_value is not None else
                 percentage_indicator_html(0, movement=0, label="→ Reward estimate unavailable")
             )
@@ -2737,12 +2782,12 @@ def render_dashboard():
         projection_help = "Volatility-based scenario using the selected chart interval and recent ATR. It is a planning reference, not a price forecast."
         render_percentage_metric(
             h1, sig["projection_one_label"], f"${projection_one:,.{ticker_digits}f}",
-            percentage_indicator_html(projection_one_pct, movement=projection_one - price, label=f"{projection_one_pct:+.2f}% favorable-side scenario"),
+            percentage_indicator_html(projection_one_pct, movement=projection_one - price, label=f"{projection_one_pct:+.2f}% scenario"),
             help_text=projection_help,
         )
         render_percentage_metric(
             h2, sig["projection_two_label"], f"${projection_two:,.{ticker_digits}f}",
-            percentage_indicator_html(projection_two_pct, movement=projection_two - price, label=f"{projection_two_pct:+.2f}% favorable-side scenario"),
+            percentage_indicator_html(projection_two_pct, movement=projection_two - price, label=f"{projection_two_pct:+.2f}% scenario"),
             help_text=f"Longer-range volatility scenario. Recent daily reference range: ${sig['daily_range'][0]:,.{ticker_digits}f} to ${sig['daily_range'][1]:,.{ticker_digits}f}. This is not a forecast.",
         )
         st.caption("Arrow guide: ↑ price/return moving up · ↓ moving down · → nearly flat (within 0.05%). A ↓ arrow can still show a positive reward on a SHORT plan. Win-rate and AI percentages describe past patterns, not future certainty.")
