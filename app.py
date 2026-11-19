@@ -989,6 +989,127 @@ div[data-testid="column"] [data-testid="stVerticalBlock"] {
   .terminal-pct-badge .pct-indicator { font-size: 11px !important; padding: 4px 7px; }
 }
 
+
+
+/* ---------- Professional card and panel border system ----------
+   A final, consolidated pass to override older one-off border rules.
+   Keeps the existing layout, calculations, signals, and interactions intact. */
+:root {
+  --card-bg: #1b2230;
+  --card-bg-soft: #202938;
+  --card-border: #354154;
+  --card-border-hover: #52647d;
+  --card-radius: 9px;
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, .14);
+}
+
+/* Streamlit bordered containers: consistent edge, radius, and spacing. */
+[data-testid="stVerticalBlockBorderWrapper"] {
+  border: 1px solid var(--card-border) !important;
+  border-radius: var(--card-radius) !important;
+  background: var(--card-bg) !important;
+  box-shadow: var(--card-shadow) !important;
+  overflow: visible !important;
+  transition: border-color .15s ease, box-shadow .15s ease !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+  border-color: var(--card-border-hover) !important;
+  box-shadow: 0 3px 11px rgba(0, 0, 0, .19) !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] > div {
+  min-width: 0 !important;
+  background: transparent !important;
+}
+
+/* Metric cards: quiet surface and crisp internal hierarchy. */
+[data-testid="stMetric"] {
+  border: 1px solid #354154 !important;
+  border-radius: 8px !important;
+  background: #1b2230 !important;
+  box-shadow: none !important;
+  padding: 12px 14px !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricLabel"] {
+  color: #9ba8ba !important;
+  font-weight: 550 !important;
+  letter-spacing: .01em !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+  color: #f0f3f8 !important;
+  font-weight: 680 !important;
+  letter-spacing: -.02em !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+/* Percentage cards keep the badge and metric inside one shared card. */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) {
+  border: 1px solid #40516a !important;
+  border-radius: 10px !important;
+  background: linear-gradient(145deg, #202a39 0%, #1b2230 100%) !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .17) !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker):hover {
+  border-color: #62758f !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) [data-testid="stMetric"] {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Purpose-built HTML cards use the same restrained border language. */
+.terminal-pct-card,
+.priority-buy-card,
+.suggested-asset-row,
+.paper-empty-state,
+.readable-alert {
+  border-radius: var(--card-radius) !important;
+  box-shadow: var(--card-shadow) !important;
+}
+.terminal-pct-card {
+  border: 1px solid #40516a !important;
+  background: linear-gradient(145deg, #202a39 0%, #1b2230 100%) !important;
+}
+.priority-buy-card {
+  border: 1px solid #365b59 !important;
+  background: linear-gradient(145deg, #192d2d 0%, #18232e 100%) !important;
+}
+.suggested-asset-row {
+  border: 1px solid #354154 !important;
+  background: #1b2230 !important;
+}
+.paper-empty-state {
+  border: 1px solid #3b4b62 !important;
+  border-left: 3px solid #6f9df5 !important;
+}
+.readable-alert {
+  border: 1px solid #40516b !important;
+  border-left: 4px solid #6fa8ff !important;
+}
+
+/* Expanders and data tables share the same clean panel outline. */
+[data-testid="stExpander"] {
+  border: 1px solid var(--card-border) !important;
+  border-radius: var(--card-radius) !important;
+  box-shadow: none !important;
+}
+[data-testid="stDataFrame"],
+[data-testid="stDataEditor"] {
+  border: 1px solid var(--card-border) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+/* Do not let narrow screens create oversized or clipped card borders. */
+@media (max-width: 700px) {
+  [data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 8px !important;
+  }
+  [data-testid="stMetric"] {
+    padding: 10px 11px !important;
+  }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
