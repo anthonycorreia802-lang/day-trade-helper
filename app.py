@@ -695,6 +695,38 @@ section[data-testid="stSidebar"] p {
   [data-testid="stVerticalBlockBorderWrapper"]:has(.robinhood-panel-marker) { padding: 9px !important; }
 }
 
+/* Unified percentage cards: keep the main metric and its percentage badge in one surface. */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) {
+  background: linear-gradient(145deg, #202a3b 0%, #1b2230 100%) !important;
+  border: 1px solid #3b4d66 !important;
+  border-radius: 9px !important;
+  padding: 9px 11px 8px !important;
+  box-shadow: 0 3px 12px rgba(0,0,0,.14) !important;
+}
+.pct-card-marker { display: none !important; }
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) [data-testid="stMetric"] {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 3px 2px 2px !important;
+  min-height: 70px !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) .pct-indicator {
+  margin: 3px 2px 1px !important;
+  padding: 5px 9px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) [data-testid="stMetricValue"] {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+@media (max-width: 700px) {
+  [data-testid="stVerticalBlockBorderWrapper"]:has(.pct-card-marker) { padding: 7px 8px 6px !important; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -948,6 +980,15 @@ def percentage_indicator_html(value, movement=None, label=None, neutral_threshol
         f'<span class="pct-indicator-icon" aria-hidden="true">{safe_icon}</span>'
         f'<span>{safe_label}</span></span>'
     )
+
+
+def render_percentage_metric(column, label, value, indicator_html, help_text=None):
+    """Render a metric and its related percentage inside one polished card."""
+    with column:
+        with st.container(border=True):
+            st.markdown('<span class="pct-card-marker"></span>', unsafe_allow_html=True)
+            st.metric(label, value, help=help_text)
+            st.markdown(indicator_html, unsafe_allow_html=True)
 
 
 def paper_trade_return_pct(pnl, entry_price, quantity):
@@ -1401,8 +1442,10 @@ def render_historical_practice_simulator(df, ticker, rr_ratio=1.8, trading_horiz
             r1, r2, r3 = st.columns(3)
             r1.metric("Entry", f"${replay['entry']:,.{price_decimals(replay['entry'])}f}")
             r2.metric("Exit", f"${replay['exit']:,.{price_decimals(replay['exit'])}f}")
-            r3.metric("Hypothetical result", f"{replay['pnl_pct']:+.2f}%", f"{replay['r_multiple']:+.2f}R")
-            r3.markdown(percentage_indicator_html(replay["pnl_pct"], label=f"{replay['pnl_pct']:+.2f}% practice return"), unsafe_allow_html=True)
+            render_percentage_metric(
+                r3, "Hypothetical result", f"{replay['pnl_pct']:+.2f}%",
+                percentage_indicator_html(replay["pnl_pct"], label=f"{replay['pnl_pct']:+.2f}% practice return"),
+            )
             st.caption(f"{display_asset_name(ticker)} · {replay['bars_checked']} candles · {replay['start_time']} to {replay['exit_time']}. {replay['note']}")
         st.caption("Educational replay only: one historical setup, no fees/spread/slippage, and no claim that the next trade will behave the same way. If one candle touches both stop and target, the simulator assumes the stop happened first.")
 
@@ -2261,45 +2304,44 @@ def render_dashboard():
                 f"Long {sig['long_score']}/5 · Short {sig['short_score']}/5",
                 help="Bullish and bearish checks are tied, so the app does not favor a direction."
             )
-            ai_c2.metric("Potential Reward to Target", "—", help="No single direction is favored, so no directional target reward is presented.")
-            ai_c2.markdown(percentage_indicator_html(0, movement=0, label="→ Waiting for clearer direction"), unsafe_allow_html=True)
-            ai_c3.metric(
-                "Technical Alignment", f"{alignment_pct:.0f}%",
-                f"{checks_passed} of 5 checks on each side",
-                help="Share of the five technical checks that pass for each tied side. This is not a probability of profit."
+            render_percentage_metric(
+                ai_c2, "Potential Reward to Target", "—",
+                percentage_indicator_html(0, movement=0, label="→ Waiting for clearer direction"),
+                help_text="No single direction is favored, so no directional target reward is presented.",
             )
-            ai_c3.markdown(percentage_indicator_html(alignment_pct, movement=0, label=f"→ {checks_passed}/5 checks · no directional edge"), unsafe_allow_html=True)
+            render_percentage_metric(
+                ai_c3, "Technical Alignment", f"{alignment_pct:.0f}%",
+                percentage_indicator_html(alignment_pct, movement=0, label=f"→ {checks_passed}/5 checks · no directional edge"),
+                help_text="Share of the five technical checks that pass for each tied side. This is not a probability of profit.",
+            )
         else:
             side_label = "Bullish / Long" if reward_assessment["side"] == "LONG" else "Bearish / Short"
             ai_c1.metric("AI Technical Assessment", reward_assessment["label"], f"{side_label} · {checks_passed}/5 checks")
-            ai_c2.metric(
-                "Potential Reward to Target",
-                f"+{reward_assessment['potential_reward_pct']:.2f}%" if reward_assessment.get("potential_reward_pct") is not None else "—",
-                help="Favorable price distance from the planned entry to target. Positive for both LONG and SHORT plans. It is not the chance that the target will be reached.",
-            )
             ai_move_sign = 1 if reward_assessment.get("side") == "LONG" else -1
-            if reward_assessment.get("potential_reward_pct") is not None:
-                ai_c2.markdown(
-                    percentage_indicator_html(
-                        reward_assessment["potential_reward_pct"],
-                        movement=ai_move_sign * reward_assessment["potential_reward_pct"],
-                        label=f"+{reward_assessment['potential_reward_pct']:.2f}% target reward · "
-                              f"risk {reward_assessment['risk_pct']:.2f}% · {reward_assessment['reward_to_risk']:.2f}:1 reward/risk",
-                    ),
-                    unsafe_allow_html=True,
-                )
-            ai_c3.metric(
-                "Technical Alignment", f"{alignment_pct:.0f}%",
-                f"{checks_passed} of 5 checks support {side_label}",
-                help="This is a simple count of the five technical checks that agree with the selected direction. It is not a win probability or forecast.",
+            reward_value = reward_assessment.get("potential_reward_pct")
+            reward_label = (
+                percentage_indicator_html(
+                    reward_value,
+                    movement=ai_move_sign * reward_value,
+                    label=f"+{reward_value:.2f}% target reward · risk {reward_assessment['risk_pct']:.2f}% · "
+                          f"{reward_assessment['reward_to_risk']:.2f}:1 reward/risk",
+                ) if reward_value is not None else
+                percentage_indicator_html(0, movement=0, label="→ Reward estimate unavailable")
             )
-            ai_c3.markdown(
+            render_percentage_metric(
+                ai_c2, "Potential Reward to Target",
+                f"+{reward_value:.2f}%" if reward_value is not None else "—",
+                reward_label,
+                help_text="Favorable price distance from the planned entry to target. Positive for both LONG and SHORT plans. It is not the chance that the target will be reached.",
+            )
+            render_percentage_metric(
+                ai_c3, "Technical Alignment", f"{alignment_pct:.0f}%",
                 percentage_indicator_html(
                     alignment_pct,
                     movement=ai_move_sign * alignment_pct,
                     label=f"{('↑' if ai_move_sign > 0 else '↓')} {alignment_pct:.0f}% technical checks aligned",
                 ),
-                unsafe_allow_html=True,
+                help_text="This is a simple count of the five technical checks that agree with the selected direction. It is not a win probability or forecast.",
             )
         with st.expander("Why the AI assessment looks this way", expanded=True):
             if reward_assessment["side"] == "MIXED":
@@ -2363,40 +2405,37 @@ def render_dashboard():
             price, price_plan["entry"], price_plan["stop"], price_plan["target"], price_plan_side
         )
         t1, t2, t3 = st.columns(3)
-        t1.metric(
-            f"Planned Entry ({price_plan_side})",
-            f"${price_plan['entry']:,.{ticker_digits}f}",
-            help="The entry level for the stronger current technical side. The percentage compares this entry price with the latest quote; negative means below the quote and positive means above it."
+        render_percentage_metric(
+            t1, f"Planned Entry ({price_plan_side})", f"${price_plan['entry']:,.{ticker_digits}f}",
+            percentage_indicator_html(price_pcts["entry_vs_current_pct"], label=f"{price_pcts['entry_vs_current_pct']:+.2f}% vs current"),
+            help_text="The entry level for the stronger current technical side. The percentage compares this entry price with the latest quote; negative means below the quote and positive means above it.",
         )
-        t1.markdown(percentage_indicator_html(price_pcts["entry_vs_current_pct"], label=f"{price_pcts['entry_vs_current_pct']:+.2f}% vs current"), unsafe_allow_html=True)
-        t2.metric(
-            "Profit Target",
-            f"${price_plan['target']:,.{ticker_digits}f}",
-            help="Favorable percentage move from planned entry to target. It is positive for both LONG and SHORT plans and is not a probability of reaching the target."
+        render_percentage_metric(
+            t2, "Profit Target", f"${price_plan['target']:,.{ticker_digits}f}",
+            percentage_indicator_html(price_pcts["reward_pct"], movement=price_plan["target"] - price_plan["entry"], label=f"+{price_pcts['reward_pct']:.2f}% potential reward"),
+            help_text="Favorable percentage move from planned entry to target. It is positive for both LONG and SHORT plans and is not a probability of reaching the target.",
         )
-        t2.markdown(percentage_indicator_html(price_pcts["reward_pct"], movement=price_plan["target"] - price_plan["entry"], label=f"+{price_pcts['reward_pct']:.2f}% potential reward"), unsafe_allow_html=True)
-        t3.metric(
-            "Stop Loss",
-            f"${price_plan['stop']:,.{ticker_digits}f}",
-            help="Adverse percentage move from planned entry to stop. The estimated loss also depends on position size and can differ from real fills."
+        render_percentage_metric(
+            t3, "Stop Loss", f"${price_plan['stop']:,.{ticker_digits}f}",
+            percentage_indicator_html(-price_pcts["risk_pct"], movement=price_plan["stop"] - price_plan["entry"], label=f"-{price_pcts['risk_pct']:.2f}% planned risk"),
+            help_text="Adverse percentage move from planned entry to stop. The estimated loss also depends on position size and can differ from real fills.",
         )
-        t3.markdown(percentage_indicator_html(-price_pcts["risk_pct"], movement=price_plan["stop"] - price_plan["entry"], label=f"-{price_pcts['risk_pct']:.2f}% planned risk"), unsafe_allow_html=True)
         h1, h2 = st.columns(2)
         projection_one = float(sig["projection_one_target"])
         projection_two = float(sig["projection_two_target"])
         projection_one_pct = directional_price_move_pct(price, projection_one, price_plan_side)
         projection_two_pct = directional_price_move_pct(price, projection_two, price_plan_side)
         projection_help = "Volatility-based scenario using the selected chart interval and recent ATR. It is a planning reference, not a price forecast."
-        h1.metric(
-            sig["projection_one_label"], f"${projection_one:,.{ticker_digits}f}",
-            help=projection_help
+        render_percentage_metric(
+            h1, sig["projection_one_label"], f"${projection_one:,.{ticker_digits}f}",
+            percentage_indicator_html(projection_one_pct, movement=projection_one - price, label=f"{projection_one_pct:+.2f}% favorable-side scenario"),
+            help_text=projection_help,
         )
-        h1.markdown(percentage_indicator_html(projection_one_pct, movement=projection_one - price, label=f"{projection_one_pct:+.2f}% favorable-side scenario"), unsafe_allow_html=True)
-        h2.metric(
-            sig["projection_two_label"], f"${projection_two:,.{ticker_digits}f}",
-            help=f"Longer-range volatility scenario. Recent daily reference range: ${sig['daily_range'][0]:,.{ticker_digits}f} to ${sig['daily_range'][1]:,.{ticker_digits}f}. This is not a forecast."
+        render_percentage_metric(
+            h2, sig["projection_two_label"], f"${projection_two:,.{ticker_digits}f}",
+            percentage_indicator_html(projection_two_pct, movement=projection_two - price, label=f"{projection_two_pct:+.2f}% favorable-side scenario"),
+            help_text=f"Longer-range volatility scenario. Recent daily reference range: ${sig['daily_range'][0]:,.{ticker_digits}f} to ${sig['daily_range'][1]:,.{ticker_digits}f}. This is not a forecast.",
         )
-        h2.markdown(percentage_indicator_html(projection_two_pct, movement=projection_two - price, label=f"{projection_two_pct:+.2f}% favorable-side scenario"), unsafe_allow_html=True)
         st.caption("Arrow guide: ↑ price/return moving up · ↓ moving down · → nearly flat (within 0.05%). A ↓ arrow can still show a positive reward on a SHORT plan. Win-rate and AI percentages describe past patterns, not future certainty.")
         if sig.get("side") == "None":
             st.caption("No confirmed directional setup. The entry/stop/target values above are a reference plan based on the stronger score, not a trade signal.")
@@ -2807,8 +2846,10 @@ def render_dashboard():
 
         p1, p2, p3, p4, p5 = st.columns(5)
         p1.metric("Paper Starting Balance", f"${st.session_state.account_size:,.2f}")
-        p2.metric("Paper Portfolio Equity", f"${portfolio_equity:,.2f}")
-        p2.markdown(percentage_indicator_html(total_return, label=f"{total_return:+.2f}% vs start"), unsafe_allow_html=True)
+        render_percentage_metric(
+            p2, "Paper Portfolio Equity", f"${portfolio_equity:,.2f}",
+            percentage_indicator_html(total_return, label=f"{total_return:+.2f}% vs start"),
+        )
         p3.metric("Realized P&L", f"${realized_pnl:+,.2f}")
         p4.metric("Open P&L", f"${unrealized_pnl:+,.2f}")
         p5.metric("Open Positions", str(len(open_trades)))
@@ -2874,14 +2915,17 @@ def render_dashboard():
                     h2.metric("Entry / Mark", f"${float(trade['entry']):,.{digits}f}", f"Mark ${live_px:,.{digits}f}")
                     h3.metric("Stop / Target", f"${float(trade['stop']):,.{digits}f}", f"Target ${float(trade['target']):,.{digits}f}")
                     open_return_pct = paper_trade_return_pct(unrealized, trade["entry"], trade["shares"])
-                    h4.metric(
-                        "Unrealized P&L",
-                        f"${unrealized:+,.2f}",
-                        help="Estimated open profit/loss. Return % = unrealized P&L divided by entry price × shares/units; LONG and SHORT P&L are direction-adjusted."
-                    )
                     if open_return_pct is not None:
-                        h4.markdown(percentage_indicator_html(open_return_pct, label=f"{open_return_pct:+.2f}% on entry value"), unsafe_allow_html=True)
+                        render_percentage_metric(
+                            h4, "Unrealized P&L", f"${unrealized:+,.2f}",
+                            percentage_indicator_html(open_return_pct, label=f"{open_return_pct:+.2f}% on entry value"),
+                            help_text="Estimated open profit/loss. Return % = unrealized P&L divided by entry price × shares/units; LONG and SHORT P&L are direction-adjusted.",
+                        )
                     else:
+                        h4.metric(
+                            "Unrealized P&L", f"${unrealized:+,.2f}",
+                            help="Estimated open profit/loss. Return % = unrealized P&L divided by entry price × shares/units; LONG and SHORT P&L are direction-adjusted.",
+                        )
                         h4.caption("Return % unavailable")
                     if stop_hit:
                         st.warning("The latest available price has crossed your stop level. Review the quote and close the simulation if appropriate.")
@@ -2927,8 +2971,11 @@ def render_dashboard():
             a2.metric("Win Rate", f"{win_rate:.1f}%", f"{len(wins)} wins · {len(losses)} losses · {breakeven_count} flat")
             a3.metric("Average Winner", f"${avg_win:+,.2f}")
             a4.metric("Average Loser", f"${avg_loss:+,.2f}")
-            a5.metric("Average Trade Return", f"{avg_trade_return:+.2f}%", help="Arithmetic average of each closed trade's P&L divided by its entry notional. This is not portfolio return.")
-            a5.markdown(percentage_indicator_html(avg_trade_return, label=f"{avg_trade_return:+.2f}% average"), unsafe_allow_html=True)
+            render_percentage_metric(
+                a5, "Average Trade Return", f"{avg_trade_return:+.2f}%",
+                percentage_indicator_html(avg_trade_return, label=f"{avg_trade_return:+.2f}% average"),
+                help_text="Arithmetic average of each closed trade's P&L divided by its entry notional. This is not portfolio return.",
+            )
             cdf["cumulative_pnl"] = cdf["pnl"].cumsum()
             eq = px.line(cdf, x="closed_at" if "closed_at" in cdf else "time", y="cumulative_pnl", title="Cumulative Realized P&L", markers=True)
             eq.update_layout(paper_bgcolor="#131722", plot_bgcolor="#1e222d", font=dict(color="#e0e5ee", family="Arial, sans-serif", size=13), height=340, margin=dict(l=14, r=14, t=48, b=14), xaxis=dict(gridcolor="#2a2e39", tickfont=dict(color="#aeb8c8", size=12)), yaxis=dict(gridcolor="#2a2e39", tickfont=dict(color="#aeb8c8", size=12), title="P&L ($)"))
