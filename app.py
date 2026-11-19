@@ -1784,19 +1784,155 @@ hr {
 }
 *::-webkit-scrollbar-thumb:hover { background: #3a4a63; }
 
-/* Keep AI / Live Targets spacing intentional and pleasant */
-[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) + [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) {
-  margin-top: 1rem !important;
+/* =========================================================
+   Uniform card spacing + modern type system
+   One gap value for all metric/card borders (H + V).
+   ========================================================= */
+:root {
+  --card-gap: 0.75rem;
+  --font-sans: "Inter", "Segoe UI", "SF Pro Display", "SF Pro Text",
+    -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Roboto Mono", ui-monospace,
+    Menlo, Consolas, monospace;
 }
+
+/* Modern base type */
+html, body, .stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"],
+section[data-testid="stSidebar"] {
+  font-family: var(--font-sans) !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  text-rendering: optimizeLegibility !important;
+}
+
+h1, h2, h3, h4, h5, h6,
+.section-heading h2,
+.section-heading h3,
+.section-heading h4,
+.section-heading h5 {
+  font-family: var(--font-sans) !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.025em !important;
+  line-height: 1.28 !important;
+}
+h1 { font-size: clamp(1.5rem, 2.3vw, 1.9rem) !important; font-weight: 700 !important; }
+h2 { font-size: 1.28rem !important; }
+h3 { font-size: 1.08rem !important; }
+h4 { font-size: 0.98rem !important; }
+
+p, li, label, legend,
+[data-testid="stMarkdownContainer"],
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li {
+  font-family: var(--font-sans) !important;
+  letter-spacing: -0.01em !important;
+  line-height: 1.55 !important;
+}
+
+[data-testid="stCaptionContainer"],
+.stCaption,
+small {
+  font-family: var(--font-sans) !important;
+  letter-spacing: 0.01em !important;
+  line-height: 1.45 !important;
+}
+
+/* Numeric values: tabular, slightly tighter tracking */
+.terminal-pct-value,
+[data-testid="stMetric"] [data-testid="stMetricValue"],
+.priority-buy-card .priority-buy-level b,
+.suggested-asset-reward {
+  font-variant-numeric: tabular-nums !important;
+  font-feature-settings: "tnum" 1, "lnum" 1 !important;
+  letter-spacing: -0.02em !important;
+}
+
+.terminal-pct-label,
+[data-testid="stMetric"] [data-testid="stMetricLabel"],
+.pct-indicator {
+  font-family: var(--font-sans) !important;
+  letter-spacing: 0.015em !important;
+}
+
+.stButton > button,
+.stDownloadButton > button,
+[data-testid="stFormSubmitButton"] > button,
+[data-testid="stLinkButton"] > a {
+  font-family: var(--font-sans) !important;
+  letter-spacing: -0.01em !important;
+}
+
+.stTextInput input, .stNumberInput input, .stTextArea textarea,
+[data-baseweb="input"] input, [data-baseweb="select"] > div {
+  font-family: var(--font-sans) !important;
+  letter-spacing: -0.01em !important;
+}
+
+/* ---- Uniform gap between every card border ---- */
+[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
+  column-gap: var(--card-gap) !important;
+  row-gap: var(--card-gap) !important;
+}
+/* Consecutive card rows: same gap as horizontal (no extra / uneven margin) */
+[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) + [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) {
+  margin-top: 0 !important;
+}
+/* Still give AI expander a calm breath after the 3 cards */
 [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) + [data-testid="stExpander"] {
-  margin-top: 1.2rem !important;
+  margin-top: 1.1rem !important;
 }
 [data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] {
-  gap: 0.75rem;
+  gap: var(--card-gap);
 }
-[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
-  column-gap: 0.8rem !important;
-  row-gap: 0.8rem !important;
+/* When Streamlit stacks columns, keep the same gap */
+@media (max-width: 1100px) {
+  div[data-testid="stHorizontalBlock"] {
+    column-gap: var(--card-gap) !important;
+    row-gap: var(--card-gap) !important;
+  }
+}
+@media (max-width: 700px) {
+  [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
+    column-gap: 0.65rem !important;
+    row-gap: 0.65rem !important;
+  }
+}
+
+/* Shared card chrome so every tile feels from the same set */
+.terminal-pct-card,
+[data-testid="stMetric"],
+[data-testid="stVerticalBlockBorderWrapper"],
+.priority-buy-card,
+.suggested-asset-row,
+.paper-empty-state,
+.readable-alert,
+.terminal-notice {
+  border-radius: 10px !important;
+}
+.terminal-pct-card,
+[data-testid="stMetric"] {
+  border: 1px solid #2f3d52 !important;
+  background: linear-gradient(165deg, #1a2332 0%, #141c28 100%) !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2) !important;
+}
+.terminal-pct-card:hover,
+[data-testid="stMetric"]:hover {
+  border-color: #425872 !important;
+}
+
+/* Labels slightly softer; values slightly brighter */
+.terminal-pct-label {
+  color: #94a6bd !important;
+  font-size: 12px !important;
+  font-weight: 550 !important;
+}
+.terminal-pct-value {
+  color: #f3f6fb !important;
+  font-weight: 680 !important;
+  font-size: clamp(1.15rem, 1.7vw, 1.55rem) !important;
 }
 
 /* ---------- Section accent bars on major headings ---------- */
