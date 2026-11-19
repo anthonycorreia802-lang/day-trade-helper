@@ -2236,6 +2236,14 @@ section[data-testid="stSidebar"] h4 {
   min-width: 0 !important;
   padding: 0 !important;
 }
+.st-key-live_price_targets .live-price-targets-row-gap {
+  display: block !important;
+  width: 100% !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
 .st-key-live_price_targets .terminal-pct-card {
   position: relative !important;
   display: flex !important;
@@ -2243,10 +2251,10 @@ section[data-testid="stSidebar"] h4 {
   justify-content: flex-start !important;
   width: 100% !important;
   min-width: 0 !important;
-  min-height: 126px !important;
+  min-height: 116px !important;
   height: 100% !important;
   margin: 0 !important;
-  padding: 39px 15px 14px !important;
+  padding: 35px 13px 12px !important;
   border: 1px solid #40516a !important;
   border-radius: 10px !important;
   box-sizing: border-box !important;
@@ -2294,8 +2302,12 @@ section[data-testid="stSidebar"] h4 {
     row-gap: 12px !important;
   }
   .st-key-live_price_targets .terminal-pct-card {
-    min-height: 118px !important;
-    padding: 36px 10px 12px !important;
+    min-height: 108px !important;
+    padding: 33px 10px 10px !important;
+  }
+  .st-key-live_price_targets .live-price-targets-row-gap {
+    height: 20px !important;
+    min-height: 20px !important;
   }
   .st-key-live_price_targets .terminal-pct-badge {
     top: 7px !important;
@@ -4193,6 +4205,12 @@ def render_dashboard():
                 t3, "Stop Loss", f"${price_plan['stop']:,.{ticker_digits}f}",
                 percentage_indicator_html(-price_pcts["risk_pct"], movement=price_plan["stop"] - price_plan["entry"], label=f"-{price_pcts['risk_pct']:.2f}% planned risk"),
                 help_text="Adverse percentage move from planned entry to stop. The estimated loss also depends on position size and can differ from real fills.",
+            )
+            # Dedicated vertical breathing room between the trade-plan row
+            # and the projection row. Scoped CSS keeps this change local.
+            st.markdown(
+                '<div class="live-price-targets-row-gap" aria-hidden="true"></div>',
+                unsafe_allow_html=True,
             )
             h1, h2 = st.columns(2)
             projection_one = float(sig["projection_one_target"])
