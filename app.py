@@ -1518,7 +1518,10 @@ def scan_recommendation_candidates(
                 "_score": int(stats["score"]),
                 "_reward_pct": float(target_pct),
                 "_ai_probability": ai_probability if ai_probability is not None else 0.5,
-                "_side": side
+                "_side": side,
+                "_volume_ratio": float(stats.get("volume_ratio", 0.0)),
+                "_trend_bullish": bool(stats.get("trend_bullish", False)),
+                "_action": str(stats.get("action", "")),
             })
         except Exception:
             continue
@@ -1532,6 +1535,38 @@ def scan_recommendation_candidates(
         "ai_active": bool(adaptive_model.get("active")),
     }
 
+def select_priority_buy_alerts(rows, max_alerts=3):
+    """Return a small ranked list of long setups with trend and volume confirmation."""
+    qualified = []
+    for raw in rows or []:
+        row = normalize_candidate_row(raw)
+        try:
+            score = int(row.get("_score", str(row.get("Score", "0")).split("/")[0]))
+            volume_ratio = float(row.get("_volume_ratio", 0.0))
+            trend_bullish = bool(row.get("_trend_bullish", False))
+            reward_pct = float(row.get("_reward_pct", row.get("Potential %", 0.0)))
+        except (TypeError, ValueError):
+            continue
+        if row.get("_side") != "LONG" or score < 4:
+            continue
+        if not trend_bullish or volume_ratio < 1.0 or reward_pct <= 0:
+            continue
+        qualified.append(row)
+    qualified.sort(key=lambda row: (
+        int(row.get("_score", 0)),
+        float(row.get("_ai_probability", 0.5)),
+        float(row.get("_reward_pct", 0.0)),
+    ), reverse=True)
+    return qualified[:max(0, int(max_alerts))]
+
+
+def buy_alert_dedupe_key(row, trading_horizon):
+    """A signal is unique per asset and horizon, not merely per action label."""
+    symbol = str(row.get("Symbol", "UNKNOWN")).strip().upper()
+    side = str(row.get("_side", "LONG")).strip().upper()
+    return f"{str(trading_horizon).strip()}:{symbol}:{side}"
+
+
 # ---------- Session State ----------
 defaults = {
     "watchlist": ["SPY", "QQQ", "AAPL", "TSLA", "NVDA", "BTC-USD", "ETH-USD"],
@@ -1540,6 +1575,7 @@ defaults = {
     "account_size": 25000.0,
     "daily_loss_limit": 300.0,
     "last_alert_action": None,
+    "alerted_buy_signal_keys": [],
     "market_scan_cursor": 0,
     "recommendation_pool_size": 0,
     "ai_min_learning_samples": 20
@@ -1938,6 +1974,11 @@ def normalize_candidate_row(raw_row):
     row.setdefault("Entry", row.get("Price", 0.0))
     row.setdefault("Stop", row.get("Price", 0.0))
     row.setdefault("RSI", 0.0)
+    row.setdefault("_volume_ratio", 0.0)
+    row.setdefault("_trend_bullish", False)
+    row.setdefault("_ai_probability", 0.5)
+    row.setdefault("_score", int(str(row.get("Score", "0")).split("/")[0]) if str(row.get("Score", "0")).split("/")[0].isdigit() else 0)
+    row.setdefault("_reward_pct", float(row.get("Potential %", 0.0) or 0.0))
     return row
 
 
@@ -2025,26 +2066,49 @@ def render_top_market_candidates(compact=False):
     bullish = [row for row in candidates if row["_side"] == "LONG"]
     bearish = [row for row in candidates if row["_side"] == "SHORT"]
     if compact:
-        for row in candidates[:8]:
-            tint = "🟢" if row["_side"] == "LONG" else "🔴"
+        priority_buys = select_priority_buy_alerts(candidates, max_alerts=3)
+        st.markdown("#### 🔔 Priority buy alerts")
+        st.caption("Up to 3 strongest bullish setups · score 4/5 or better · rising trend and above-average volume. Alerts are deduplicated by asset and horizon.")
+        seen_keys = list(st.session_state.get("alerted_buy_signal_keys", []))
+        new_alerts = []
+        for row in priority_buys:
+            alert_key = buy_alert_dedupe_key(row, trading_horizon)
+            if alert_key not in seen_keys:
+                new_alerts.append(row)
+                seen_keys.append(alert_key)
+        # Bound session history so it cannot grow indefinitely.
+        st.session_state["alerted_buy_signal_keys"] = seen_keys[-200:]
+        if new_alerts:
+            names = ", ".join(row["Symbol"] for row in new_alerts[:3])
+            st.toast(f"New {trading_horizon} buy setup: {names}", icon="🟢")
+        if not priority_buys:
+            st.info("No stocks or crypto currently meet all priority-buy checks. The scanner will keep looking.")
+        for rank, row in enumerate(priority_buys, start=1):
             digits = price_decimals(row["Price"])
-            today_pct_label = f"{float(row['Today %']):+.2f}% today"
-            target_pct_label = f"{float(row['Potential %']):+.2f}% target move"
-            target_move = float(row["Target Price"]) - float(row["Entry"])
+            entry = float(row["Entry"])
+            stop = float(row["Stop"])
+            target = float(row["Target Price"])
+            risk_pct = abs((entry - stop) / max(entry, 0.000001)) * 100
+            reward_pct = abs((target - entry) / max(entry, 0.000001)) * 100
             st.markdown(
-                f'<div style="padding:8px 9px;margin:5px 0;border:1px solid #293b52;border-radius:8px;background:#111d2b">'
-                f'<div style="font-weight:750;color:#f0f6ff;line-height:1.25">{tint} {row["Asset Name"]}</div>'
-                f'<div style="display:flex;justify-content:space-between;gap:8px;margin-top:3px"><b style="color:#8ed8ff">{row["Symbol"]}</b><b>${row["Price"]:,.{digits}f}</b></div>'
-                f'<div style="color:#aeb8c8;font-size:12px;margin-top:4px">{row["Asset Type"]} · {row["Bias"]} · Score {row["Score"]}</div>'
-                f'{percentage_indicator_html(row["Today %"], label=today_pct_label)}'
-                f'{percentage_indicator_html(row["Potential %"], movement=target_move, label=target_pct_label)}</div>',
-                unsafe_allow_html=True
+                f'<div style="padding:10px 11px;margin:7px 0;border:1px solid #236b5d;border-radius:9px;background:linear-gradient(135deg,#142b2a,#111d2b)">'
+                f'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">'
+                f'<b style="color:#e8fff8">{rank}. {html.escape(row["Asset Name"])}</b>'
+                f'<span style="font-size:11px;color:#7fe0bd;border:1px solid #236b5d;border-radius:12px;padding:2px 7px">BUY SETUP</span></div>'
+                f'<div style="display:flex;justify-content:space-between;gap:8px;margin-top:5px"><b style="color:#8ed8ff">{html.escape(row["Symbol"])}</b><b>${float(row["Price"]):,.{digits}f}</b></div>'
+                f'<div style="color:#aeb8c8;font-size:12px;margin-top:3px">{html.escape(row["Asset Type"])} · Score {row["_score"]}/5 · Volume {float(row["_volume_ratio"]):.2f}× average</div>'
+                f'<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:8px">'
+                f'<div style="background:#1b3030;border-radius:6px;padding:6px"><small style="color:#aeb8c8">Entry</small><br><b>${entry:,.{digits}f}</b></div>'
+                f'<div style="background:#1b3030;border-radius:6px;padding:6px"><small style="color:#aeb8c8">Stop · {risk_pct:.1f}%</small><br><b>${stop:,.{digits}f}</b></div>'
+                f'<div style="background:#1b3030;border-radius:6px;padding:6px"><small style="color:#aeb8c8">Target · +{reward_pct:.1f}%</small><br><b>${target:,.{digits}f}</b></div>'
+                f'</div></div>', unsafe_allow_html=True
             )
-        choices = [row["Symbol"] for row in candidates]
+        choices = [row["Symbol"] for row in priority_buys] or [row["Symbol"] for row in candidates]
         chosen = st.selectbox("Load candidate", choices, key="top_candidate_pick_sidebar")
         if st.button("Load selected candidate", key="top_candidate_load_sidebar", use_container_width=True):
             st.session_state.active_ticker = chosen
             st.rerun()
+        st.caption("These are rule-based watchlist candidates, not automatic orders or guaranteed profitable trades.")
         return
 
     if bullish:
@@ -2228,9 +2292,9 @@ def render_dashboard():
             and "WAIT" not in str(sig.get("action", "")).upper()
         )
         if confirmed_horizon_signal:
-            alert_key = f"{trading_horizon}:{sig['action']}"
+            alert_key = f"selected:{trading_horizon}:{ticker}:{sig['side']}"
             if st.session_state.last_alert_action != alert_key:
-                st.toast(f"🚨 {trading_horizon} alert: {sig['action']} on {ticker} @ ${price:,.{price_decimals(price)}f}!", icon="⚡")
+                st.toast(f"{trading_horizon} signal on {ticker}: {sig['action']} @ ${price:,.{price_decimals(price)}f}", icon="⚡")
                 st.session_state.last_alert_action = alert_key
 
         last_bar_time = df.index[-1]
