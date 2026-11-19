@@ -1374,6 +1374,571 @@ hr {
   }
 }
 
+/* =========================================================
+   TRADE DESK VISUAL SYSTEM — professional, calm, TV-like
+   Cosmetics only. No feature or layout logic changes.
+   ========================================================= */
+:root {
+  --desk-bg: #0f131a;
+  --desk-panel: #151b26;
+  --desk-panel-elevated: #1a2230;
+  --desk-border: #2c3648;
+  --desk-border-soft: #243041;
+  --desk-text: #dce3ef;
+  --desk-strong: #f4f7fc;
+  --desk-muted: #9aa8bc;
+  --desk-blue: #3b82f6;
+  --desk-green: #10b981;
+  --desk-red: #ef4444;
+  --desk-amber: #eab308;
+  --desk-radius: 10px;
+  --desk-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+  --desk-shadow-soft: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+
+/* Deep charcoal canvas — closer to a real trading workstation */
+html, body, .stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stMainBlockContainer"] {
+  background: var(--desk-bg) !important;
+  color: var(--desk-text) !important;
+}
+.block-container {
+  max-width: 1720px !important;
+  padding-top: 1.1rem !important;
+  padding-bottom: 2.5rem !important;
+}
+header[data-testid="stHeader"] {
+  background: rgba(15, 19, 26, 0.92) !important;
+  border-bottom: 1px solid var(--desk-border-soft) !important;
+  backdrop-filter: blur(10px);
+}
+
+/* Typography: crisp hierarchy like a terminal, not a blog */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--desk-strong) !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.02em !important;
+}
+[data-testid="stMarkdownContainer"],
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li {
+  color: var(--desk-text) !important;
+}
+[data-testid="stCaptionContainer"],
+.stCaption,
+small {
+  color: var(--desk-muted) !important;
+}
+
+/* Sidebar: solid instrument rail */
+section[data-testid="stSidebar"] {
+  background: linear-gradient(180deg, #141a24 0%, #121722 100%) !important;
+  border-right: 1px solid var(--desk-border) !important;
+}
+section[data-testid="stSidebar"] .stButton > button {
+  border-radius: 8px !important;
+  border: 1px solid var(--desk-border-soft) !important;
+  background: #1a2130 !important;
+  transition: border-color 0.14s ease, background 0.14s ease !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover {
+  border-color: #4a5d7a !important;
+  background: #212b3d !important;
+}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"],
+section[data-testid="stSidebar"] [data-testid="stBaseButton-primary"] {
+  background: linear-gradient(180deg, #2a3f6b 0%, #24375e 100%) !important;
+  border-color: #4d6ea8 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+/* Inputs: quiet, precise */
+.stTextInput input, .stNumberInput input, .stTextArea textarea,
+[data-baseweb="input"] input, [data-baseweb="textarea"] textarea,
+[data-baseweb="select"] > div, [data-baseweb="select"] input {
+  background: #0f1520 !important;
+  border: 1px solid var(--desk-border) !important;
+  border-radius: 8px !important;
+  color: var(--desk-strong) !important;
+  -webkit-text-fill-color: var(--desk-strong) !important;
+}
+[data-baseweb="select"] > div:focus-within,
+[data-baseweb="input"]:focus-within,
+.stTextInput input:focus, .stNumberInput input:focus, .stTextArea textarea:focus {
+  border-color: #4f7dd8 !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.45) !important;
+  background: #121a28 !important;
+}
+
+/* Primary actions: restrained blue, not neon */
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="stBaseButton-primary"],
+[data-testid="stBaseButton-primary"],
+[data-testid="stFormSubmitButton"] > button[kind="primary"] {
+  background: linear-gradient(180deg, #3563d4 0%, #2b54bd 100%) !important;
+  border: 1px solid #5b85ea !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  border-radius: 8px !important;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.22) !important;
+}
+.stButton > button[kind="primary"]:hover,
+[data-testid="stBaseButton-primary"]:hover {
+  background: linear-gradient(180deg, #3d6de0 0%, #2f5cc9 100%) !important;
+  border-color: #7aa0f5 !important;
+}
+
+/* Secondary buttons stay quiet */
+.stButton > button, .stDownloadButton > button,
+[data-testid="stFormSubmitButton"] > button {
+  border-radius: 8px !important;
+  background: #1c2433 !important;
+  border: 1px solid var(--desk-border) !important;
+  color: var(--desk-text) !important;
+  -webkit-text-fill-color: var(--desk-text) !important;
+}
+.stButton > button:hover, .stDownloadButton > button:hover {
+  background: #243042 !important;
+  border-color: #4a5d78 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+/* Hero: subtle elevated header strip */
+.terminal-hero {
+  background: linear-gradient(135deg, #171e2b 0%, #131925 55%, #151c29 100%) !important;
+  border: 1px solid var(--desk-border) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--desk-shadow-soft) !important;
+  padding: 1.05rem 1.25rem !important;
+  margin: 0.15rem 0 1.05rem !important;
+}
+.terminal-hero h1 {
+  color: var(--desk-strong) !important;
+  letter-spacing: -0.03em !important;
+}
+.terminal-kicker {
+  color: #8ea0ba !important;
+  letter-spacing: 0.14em !important;
+  font-size: 0.68rem !important;
+  font-weight: 700 !important;
+}
+
+/* Signal banner: clear status without visual noise */
+.action-banner {
+  border-radius: 10px !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.04em !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+.action-banner.buy {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.16), rgba(16, 185, 129, 0.08)) !important;
+  border: 1px solid rgba(16, 185, 129, 0.45) !important;
+  color: #34d399 !important;
+}
+.action-banner.short {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.07)) !important;
+  border: 1px solid rgba(239, 68, 68, 0.45) !important;
+  color: #f87171 !important;
+}
+.action-banner.watch {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.14), rgba(59, 130, 246, 0.06)) !important;
+  border: 1px solid rgba(59, 130, 246, 0.42) !important;
+  color: #93c5fd !important;
+}
+
+/* Metric cards: floating instrument tiles */
+.terminal-pct-card {
+  background: linear-gradient(160deg, #1a2332 0%, #141c28 100%) !important;
+  border: 1px solid var(--desk-border) !important;
+  border-radius: var(--desk-radius) !important;
+  box-shadow: var(--desk-shadow) !important;
+  min-height: 118px !important;
+}
+.terminal-pct-card:hover {
+  border-color: #3f5370 !important;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.32) !important;
+}
+.terminal-pct-label {
+  color: #9aabc2 !important;
+  font-size: 12px !important;
+  font-weight: 560 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: none !important;
+}
+.terminal-pct-value {
+  color: var(--desk-strong) !important;
+  font-weight: 680 !important;
+  font-variant-numeric: tabular-nums !important;
+  letter-spacing: -0.02em !important;
+}
+
+/* Percentage pills: clean status chips */
+.pct-indicator {
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.01em !important;
+  box-shadow: none !important;
+}
+.pct-up {
+  color: #34d399 !important;
+  background: rgba(16, 185, 129, 0.12) !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+}
+.pct-down {
+  color: #f87171 !important;
+  background: rgba(239, 68, 68, 0.12) !important;
+  border-color: rgba(239, 68, 68, 0.35) !important;
+}
+.pct-neutral {
+  color: #c5d0e0 !important;
+  background: rgba(148, 163, 184, 0.12) !important;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+}
+
+/* Native Streamlit metrics as matching tiles */
+[data-testid="stMetric"] {
+  background: linear-gradient(160deg, #1a2332 0%, #141c28 100%) !important;
+  border: 1px solid var(--desk-border) !important;
+  border-radius: var(--desk-radius) !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18) !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricLabel"] {
+  color: #9aabc2 !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+  color: var(--desk-strong) !important;
+  font-variant-numeric: tabular-nums !important;
+}
+[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+  background: #1e2a3b !important;
+  border: 1px solid #334155 !important;
+  border-radius: 6px !important;
+  color: #c8d4e6 !important;
+  -webkit-text-fill-color: #c8d4e6 !important;
+}
+
+/* Bordered panels / open positions */
+[data-testid="stVerticalBlockBorderWrapper"] {
+  background: var(--desk-panel) !important;
+  border: 1px solid var(--desk-border) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Expanders: instrument drawers */
+[data-testid="stExpander"] {
+  background: var(--desk-panel) !important;
+  border: 1px solid var(--desk-border) !important;
+  border-radius: 11px !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+[data-testid="stExpander"] summary {
+  background: transparent !important;
+  color: var(--desk-strong) !important;
+  -webkit-text-fill-color: var(--desk-strong) !important;
+  font-weight: 620 !important;
+}
+[data-testid="stExpander"] details[open] > div,
+[data-testid="stExpander"] .streamlit-expanderContent {
+  background: #141b27 !important;
+  border-top: 1px solid var(--desk-border-soft) !important;
+}
+
+/* Tabs */
+[data-testid="stTabs"] [role="tab"][aria-selected="true"],
+[data-baseweb="tab"][aria-selected="true"] {
+  background: #1e2a3d !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  border-bottom-color: var(--desk-blue) !important;
+}
+
+/* Priority buy cards & suggested rows — same language */
+.priority-buy-card {
+  background: linear-gradient(145deg, #152826 0%, #141d28 100%) !important;
+  border: 1px solid #2f4f4a !important;
+  border-radius: 11px !important;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.2) !important;
+}
+.priority-buy-card .priority-buy-level {
+  background: #1a2c2c !important;
+  border: 1px solid #2d4547 !important;
+  border-radius: 7px !important;
+}
+.suggested-asset-row {
+  background: #171f2c !important;
+  border: 1px solid var(--desk-border) !important;
+  border-radius: 9px !important;
+}
+.suggested-asset-row:hover {
+  border-color: #425872 !important;
+  background: #1a2433 !important;
+}
+
+/* Notices and alerts */
+.terminal-notice {
+  background: #1a2435 !important;
+  border: 1px solid #334866 !important;
+  border-left: 3px solid #60a5fa !important;
+  border-radius: 9px !important;
+  color: #dbe7f6 !important;
+  -webkit-text-fill-color: #dbe7f6 !important;
+}
+.terminal-notice-learning {
+  background: #2a2418 !important;
+  border-left-color: #eab308 !important;
+  color: #f3e6b8 !important;
+  -webkit-text-fill-color: #f3e6b8 !important;
+}
+.readable-alert {
+  background: #1a2435 !important;
+  border: 1px solid #334866 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22) !important;
+}
+.readable-alert.alert-buy {
+  background: #152621 !important;
+  border-color: #2f544a !important;
+  border-left-color: #10b981 !important;
+}
+
+/* Paper empty state */
+.paper-empty-state {
+  background: var(--desk-panel) !important;
+  border: 1px solid var(--desk-border) !important;
+  border-left: 3px solid #60a5fa !important;
+  border-radius: 11px !important;
+}
+
+/* Robinhood handoff panel */
+[data-testid="stVerticalBlockBorderWrapper"]:has(.robinhood-panel-marker) {
+  background: linear-gradient(145deg, #1a2538 0%, #151d2b 100%) !important;
+  border: 1px solid #3a4f6e !important;
+  border-radius: 12px !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.24) !important;
+}
+
+/* Data tables */
+[data-testid="stDataFrame"],
+[data-testid="stDataEditor"] {
+  border: 1px solid var(--desk-border) !important;
+  border-radius: 10px !important;
+  overflow: hidden !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.16) !important;
+}
+
+/* Plotly charts sit in a quiet well */
+div[data-testid="stPlotlyChart"] {
+  border: 1px solid var(--desk-border-soft) !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  background: #121722 !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22) !important;
+  padding: 2px !important;
+}
+
+/* Link button (Robinhood) */
+[data-testid="stLinkButton"] > a,
+[data-testid="stLinkButton"] a[role="button"],
+.stLinkButton a {
+  background: linear-gradient(180deg, #3563d4 0%, #2b54bd 100%) !important;
+  border: 1px solid #5b85ea !important;
+  border-radius: 9px !important;
+  box-shadow: 0 3px 12px rgba(37, 99, 235, 0.24) !important;
+  font-weight: 700 !important;
+}
+
+/* Educational footer */
+.educational-disclaimer {
+  background: #151b26 !important;
+  border: 1px solid var(--desk-border) !important;
+  border-left: 3px solid #c9a227 !important;
+  border-radius: 11px !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.16) !important;
+}
+.educational-disclaimer .disclaimer-heading {
+  color: #e8cf7a !important;
+  -webkit-text-fill-color: #e8cf7a !important;
+}
+
+/* Page dividers — thin instrument lines */
+hr {
+  border: none !important;
+  border-top: 1px solid var(--desk-border-soft) !important;
+  margin: 1.25rem 0 !important;
+  opacity: 1 !important;
+}
+
+/* Scrollbars (webkit) — low-key terminal chrome */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: #0f131a; }
+*::-webkit-scrollbar-thumb {
+  background: #2a3548;
+  border-radius: 8px;
+  border: 2px solid #0f131a;
+}
+*::-webkit-scrollbar-thumb:hover { background: #3a4a63; }
+
+/* Keep AI / Live Targets spacing intentional and pleasant */
+[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) + [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) {
+  margin-top: 1rem !important;
+}
+[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) + [data-testid="stExpander"] {
+  margin-top: 1.2rem !important;
+}
+[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] {
+  gap: 0.75rem;
+}
+[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
+  column-gap: 0.8rem !important;
+  row-gap: 0.8rem !important;
+}
+
+/* ---------- Section accent bars on major headings ---------- */
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.85rem 0 0.7rem;
+}
+.section-heading h2,
+.section-heading h3,
+.section-heading h4,
+.section-heading h5 {
+  margin: 0 !important;
+  line-height: 1.3 !important;
+}
+.section-accent {
+  flex: 0 0 auto;
+  width: 4px;
+  align-self: stretch;
+  min-height: 1.15em;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #60a5fa 0%, #3b82f6 55%, #2563eb 100%);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.35);
+}
+.section-heading-h2 .section-accent {
+  width: 5px;
+  background: linear-gradient(180deg, #93c5fd 0%, #3b82f6 50%, #1d4ed8 100%);
+}
+.section-heading-h4 .section-accent,
+.section-heading-h5 .section-accent {
+  width: 3px;
+  opacity: 0.9;
+  box-shadow: none;
+}
+/* Sidebar headings: thinner, cooler accent so the rail stays calm */
+section[data-testid="stSidebar"] .section-heading {
+  margin: 0.7rem 0 0.45rem;
+}
+section[data-testid="stSidebar"] .section-accent {
+  width: 3px;
+  background: linear-gradient(180deg, #7dd3fc 0%, #38bdf8 100%);
+  box-shadow: none;
+}
+
+/* ---------- Stronger active watchlist highlight ---------- */
+section[data-testid="stSidebar"] .stButton > button {
+  min-height: 2.35rem !important;
+  padding: 0.45rem 0.7rem !important;
+  font-size: 13.5px !important;
+  border-radius: 8px !important;
+  border: 1px solid #2a3648 !important;
+  background: #171f2c !important;
+  color: #c9d4e4 !important;
+  -webkit-text-fill-color: #c9d4e4 !important;
+  box-shadow: none !important;
+  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover {
+  background: #1e2a3b !important;
+  border-color: #4a6080 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+/* Active ticker = primary button in the watchlist loop */
+section[data-testid="stSidebar"] .stButton > button[kind="primary"],
+section[data-testid="stSidebar"] .stButton > button[data-testid="stBaseButton-primary"],
+section[data-testid="stSidebar"] [data-testid="stBaseButton-primary"] {
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.28) 0%, rgba(37, 99, 235, 0.14) 100%) !important;
+  border: 1px solid #5b8def !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  box-shadow:
+    inset 3px 0 0 #3b82f6,
+    0 0 0 1px rgba(59, 130, 246, 0.18),
+    0 4px 14px rgba(37, 99, 235, 0.18) !important;
+  font-weight: 700 !important;
+}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover,
+section[data-testid="stSidebar"] [data-testid="stBaseButton-primary"]:hover {
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.36) 0%, rgba(37, 99, 235, 0.2) 100%) !important;
+  border-color: #7aa8ff !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+/* ---------- Denser sidebar candidate cards ---------- */
+section[data-testid="stSidebar"] .priority-buy-card {
+  min-height: 0 !important;
+  margin: 5px 0 !important;
+  padding: 8px 9px !important;
+  border-radius: 9px !important;
+  gap: 0 !important;
+}
+section[data-testid="stSidebar"] .priority-buy-card .priority-buy-levels {
+  gap: 5px !important;
+  margin-top: 6px !important;
+}
+section[data-testid="stSidebar"] .priority-buy-card .priority-buy-level {
+  min-height: 42px !important;
+  padding: 5px 6px !important;
+  border-radius: 6px !important;
+}
+section[data-testid="stSidebar"] .priority-buy-card .priority-buy-level b {
+  font-size: 11.5px !important;
+  margin-top: 1px !important;
+}
+section[data-testid="stSidebar"] .priority-buy-card .priority-buy-level small {
+  font-size: 10px !important;
+}
+section[data-testid="stSidebar"] .suggested-asset-row {
+  margin: 4px 0 !important;
+  padding: 7px 8px !important;
+  border-radius: 8px !important;
+  gap: 8px !important;
+}
+section[data-testid="stSidebar"] .suggested-asset-main b {
+  font-size: 12px !important;
+  line-height: 1.25 !important;
+}
+section[data-testid="stSidebar"] .suggested-asset-main span {
+  font-size: 10px !important;
+  line-height: 1.25 !important;
+}
+section[data-testid="stSidebar"] .suggested-asset-reward {
+  font-size: 12px !important;
+}
+section[data-testid="stSidebar"] .suggested-asset-reward small {
+  font-size: 9px !important;
+}
+/* Tighten sidebar captions and subheads under candidate blocks */
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+  margin-top: 0.1rem !important;
+  margin-bottom: 0.25rem !important;
+  font-size: 12.5px !important;
+  line-height: 1.35 !important;
+}
+section[data-testid="stSidebar"] h4 {
+  margin: 0.55rem 0 0.3rem !important;
+  font-size: 0.95rem !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1382,7 +1947,13 @@ def info_heading(label, explanation, level=3):
     """Render a compact heading with a hover-only explanation icon."""
     safe_label = str(label).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     safe_tip = str(explanation).replace('&', '&amp;').replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
-    st.markdown(f'<h{level} style="margin:.7rem 0 .65rem">{safe_label}<span class="info-tip" title="{safe_tip}" aria-label="More information">i</span></h{level}>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="section-heading section-heading-h{level}">'
+        f'<span class="section-accent" aria-hidden="true"></span>'
+        f'<h{level}>{safe_label}<span class="info-tip" title="{safe_tip}" aria-label="More information">i</span></h{level}>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_terminal_notice(message, kind="info"):
