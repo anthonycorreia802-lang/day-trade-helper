@@ -368,6 +368,27 @@ div[data-testid="stPlotlyChart"] {
   -webkit-text-fill-color: #dce5f2 !important;
   opacity: 1 !important;
 }
+/* Percentage direction badges: arrows show actual movement; neutral is explicit. */
+.pct-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 1px;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-size: 13.5px !important;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: normal;
+}
+.pct-indicator-icon { font-size: 15px; font-weight: 900; line-height: 1; }
+.pct-up { color: #58d6a8 !important; background: rgba(8,153,129,.13) !important; border-color: rgba(8,153,129,.42) !important; }
+.pct-down { color: #ff858e !important; background: rgba(242,54,69,.12) !important; border-color: rgba(242,54,69,.42) !important; }
+.pct-neutral { color: #c1c8d4 !important; background: rgba(139,145,158,.13) !important; border-color: rgba(139,145,158,.35) !important; }
+.pct-indicator.pct-up, .pct-indicator.pct-up * { color:#58d6a8 !important; -webkit-text-fill-color:#58d6a8 !important; }
+.pct-indicator.pct-down, .pct-indicator.pct-down * { color:#ff858e !important; -webkit-text-fill-color:#ff858e !important; }
+.pct-indicator.pct-neutral, .pct-indicator.pct-neutral * { color:#c1c8d4 !important; -webkit-text-fill-color:#c1c8d4 !important; }
 
 /* Reusable, explicit dark notices for paper-trading and model-learning states. */
 .terminal-notice {
@@ -892,6 +913,43 @@ def calculate_directional_percentages(current_price, entry, stop, target, side):
     }
 
 
+def percentage_direction(value, neutral_threshold=0.05):
+    """Return a simple up/down/neutral marker for a percentage movement."""
+    try:
+        movement = float(value)
+    except (TypeError, ValueError):
+        return {"icon": "→", "state": "neutral", "label": "Neutral"}
+    if not np.isfinite(movement) or abs(movement) <= abs(float(neutral_threshold)):
+        return {"icon": "→", "state": "neutral", "label": "Neutral"}
+    if movement > 0:
+        return {"icon": "↑", "state": "up", "label": "Moving up"}
+    return {"icon": "↓", "state": "down", "label": "Moving down"}
+
+
+def percentage_indicator_html(value, movement=None, label=None, neutral_threshold=0.05):
+    """Create an accessible, colored up/down/neutral pill for percentage readouts.
+
+    `value` is the percentage shown to the reader. `movement` may be supplied
+    separately when the displayed value is a positive reward/risk magnitude but
+    the underlying price direction is up or down (for example, a SHORT target).
+    """
+    try:
+        shown_value = float(value)
+    except (TypeError, ValueError):
+        shown_value = 0.0
+    direction = percentage_direction(shown_value if movement is None else movement, neutral_threshold)
+    shown_label = str(label) if label is not None else f"{shown_value:+.2f}%"
+    safe_label = html.escape(shown_label)
+    safe_state = direction["state"]
+    safe_icon = direction["icon"]
+    aria = html.escape(direction["label"])
+    return (
+        f'<span class="pct-indicator pct-{safe_state}" role="status" aria-label="{aria}">'
+        f'<span class="pct-indicator-icon" aria-hidden="true">{safe_icon}</span>'
+        f'<span>{safe_label}</span></span>'
+    )
+
+
 def paper_trade_return_pct(pnl, entry_price, quantity):
     """Return P&L as a percentage of entry notional (entry price × shares/units)."""
     try:
@@ -1309,6 +1367,7 @@ def render_historical_practice_simulator(df, ticker, rr_ratio=1.8):
             r1.metric("Entry", f"${replay['entry']:,.{price_decimals(replay['entry'])}f}")
             r2.metric("Exit", f"${replay['exit']:,.{price_decimals(replay['exit'])}f}")
             r3.metric("Hypothetical result", f"{replay['pnl_pct']:+.2f}%", f"{replay['r_multiple']:+.2f}R")
+            r3.markdown(percentage_indicator_html(replay["pnl_pct"], label=f"{replay['pnl_pct']:+.2f}% practice return"), unsafe_allow_html=True)
             st.caption(f"{display_asset_name(ticker)} · {replay['bars_checked']} candles · {replay['start_time']} to {replay['exit_time']}. {replay['note']}")
         st.caption("Educational replay only: one historical setup, no fees/spread/slippage, and no claim that the next trade will behave the same way. If one candle touches both stop and target, the simulator assumes the stop happened first.")
 
@@ -1774,11 +1833,16 @@ def render_top_market_candidates(compact=False):
         for row in candidates[:8]:
             tint = "🟢" if row["_side"] == "LONG" else "🔴"
             digits = price_decimals(row["Price"])
+            today_pct_label = f"{float(row['Today %']):+.2f}% today"
+            target_pct_label = f"{float(row['Potential %']):+.2f}% target move"
+            target_move = float(row["Target Price"]) - float(row["Entry"])
             st.markdown(
                 f'<div style="padding:8px 9px;margin:5px 0;border:1px solid #293b52;border-radius:8px;background:#111d2b">'
                 f'<div style="font-weight:750;color:#f0f6ff;line-height:1.25">{tint} {row["Asset Name"]}</div>'
                 f'<div style="display:flex;justify-content:space-between;gap:8px;margin-top:3px"><b style="color:#8ed8ff">{row["Symbol"]}</b><b>${row["Price"]:,.{digits}f}</b></div>'
-                f'<span style="color:#9fb1c8;font-size:11px">{row["Asset Type"]} · {row["Bias"]} · {row["Today %"]:+.2f}% today · Score {row["Score"]} · Target {row["Potential %"]:+.2f}%</span></div>',
+                f'<div style="color:#aeb8c8;font-size:12px;margin-top:4px">{row["Asset Type"]} · {row["Bias"]} · Score {row["Score"]}</div>'
+                f'{percentage_indicator_html(row["Today %"], label=today_pct_label)}'
+                f'{percentage_indicator_html(row["Potential %"], movement=target_move, label=target_pct_label)}</div>',
                 unsafe_allow_html=True
             )
         choices = [row["Symbol"] for row in candidates]
@@ -1794,6 +1858,11 @@ def render_top_market_candidates(compact=False):
         for col in ["Price", "Target Price", "Entry", "Stop"]:
             bullish_df[col] = bullish_df[col].map(lambda value: f"${float(value):,.{price_decimals(value)}f}")
         bullish_df = bullish_df.rename(columns={"Price": "Current Price", "Today %": "Day Change %", "Target Price": "Target Price", "Potential %": "Target Distance %", "Entry": "Entry Area"})
+        bullish_df["Day Change %"] = bullish_df["Day Change %"].map(lambda value: f"{percentage_direction(value)['icon']} {float(value):+.2f}%")
+        bullish_df["Target Distance %"] = [
+            f"{percentage_direction(float(row['Target Price'].replace('$', '').replace(',', '')) - float(row['Entry Area'].replace('$', '').replace(',', '')))['icon']} {float(value):+.2f}%"
+            for (_, row), value in zip(bullish_df.iterrows(), bullish_df["Target Distance %"])
+        ]
         st.dataframe(bullish_df, use_container_width=True, hide_index=True)
     else:
         st.info("No bullish candidates currently meet the scanner's minimum technical score.")
@@ -1803,6 +1872,11 @@ def render_top_market_candidates(compact=False):
             for col in ["Price", "Target Price", "Entry", "Stop"]:
                 bearish_df[col] = bearish_df[col].map(lambda value: f"${float(value):,.{price_decimals(value)}f}")
             bearish_df = bearish_df.rename(columns={"Price": "Current Price", "Today %": "Day Change %", "Target Price": "Target Price", "Potential %": "Target Distance %", "Entry": "Entry Area"})
+            bearish_df["Day Change %"] = bearish_df["Day Change %"].map(lambda value: f"{percentage_direction(value)['icon']} {float(value):+.2f}%")
+            bearish_df["Target Distance %"] = [
+                f"{percentage_direction(float(row['Target Price'].replace('$', '').replace(',', '')) - float(row['Entry Area'].replace('$', '').replace(',', '')))['icon']} {float(value):+.2f}%"
+                for (_, row), value in zip(bearish_df.iterrows(), bearish_df["Target Distance %"])
+            ]
             st.dataframe(bearish_df, use_container_width=True, hide_index=True)
     choices = [row["Symbol"] for row in candidates]
     pick_col, add_col = st.columns([2, 1])
@@ -1986,15 +2060,26 @@ def render_dashboard():
         ai_c1, ai_c2, ai_c3 = st.columns(3)
         if reward_assessment["side"] == "MIXED":
             ai_c1.metric("Directional Assessment", "Mixed", f"Top score {reward_assessment['score']}/5")
-            ai_c2.metric("Potential Reward", "Not defined", "Wait for a clearer direction")
+            ai_c2.metric("Potential Reward", "Not defined", help="The bullish and bearish checks are too close to define one clear target direction.")
+            ai_c2.markdown(percentage_indicator_html(0, label="→ Waiting for a clearer direction"), unsafe_allow_html=True)
         else:
             side_label = "Bullish / Long" if reward_assessment["side"] == "LONG" else "Bearish / Short"
             ai_c1.metric("AI Technical Assessment", reward_assessment["label"], f"{side_label} · {reward_assessment['score']}/5 checks")
             ai_c2.metric(
                 "Potential Reward to Target",
                 f"{reward_assessment['potential_reward_pct']:+.2f}%",
-                f"Planned risk {reward_assessment['risk_pct']:.2f}% · {reward_assessment['reward_to_risk']:.2f}:1 R/R",
                 help="Percentage distance from the planned entry to the illustrative target. This is a scenario size, not the chance that the target will be reached.",
+            )
+            ai_direction = reward_assessment.get("side")
+            ai_move_sign = 1 if ai_direction == "LONG" else -1
+            ai_c2.markdown(
+                percentage_indicator_html(
+                    reward_assessment["potential_reward_pct"],
+                    movement=ai_move_sign * reward_assessment["potential_reward_pct"],
+                    label=f"{reward_assessment['potential_reward_pct']:+.2f}% target reward · "
+                          f"risk {reward_assessment['risk_pct']:.2f}% · {reward_assessment['reward_to_risk']:.2f}:1 R/R",
+                ),
+                unsafe_allow_html=True,
             )
         if ai_estimate is None:
             ai_c3.metric("AI Paper-History Estimate", "Learning", f"{adaptive_model['sample_count']}/{adaptive_model['min_samples']} closed trades")
@@ -2065,36 +2150,37 @@ def render_dashboard():
         t1.metric(
             f"Planned Entry ({price_plan_side})",
             f"${price_plan['entry']:,.{ticker_digits}f}",
-            f"{price_pcts['entry_vs_current_pct']:+.2f}% vs current",
             help="The entry level for the stronger current technical side. The percentage compares this entry price with the latest quote; negative means below the quote and positive means above it."
         )
+        t1.markdown(percentage_indicator_html(price_pcts["entry_vs_current_pct"], label=f"{price_pcts['entry_vs_current_pct']:+.2f}% vs current"), unsafe_allow_html=True)
         t2.metric(
             "Profit Target",
             f"${price_plan['target']:,.{ticker_digits}f}",
-            f"+{price_pcts['reward_pct']:.2f}% potential reward",
             help="Favorable percentage move from planned entry to target. It is positive for both LONG and SHORT plans and is not a probability of reaching the target."
         )
+        t2.markdown(percentage_indicator_html(price_pcts["reward_pct"], movement=price_plan["target"] - price_plan["entry"], label=f"+{price_pcts['reward_pct']:.2f}% potential reward"), unsafe_allow_html=True)
         t3.metric(
             "Stop Loss",
             f"${price_plan['stop']:,.{ticker_digits}f}",
-            f"-{price_pcts['risk_pct']:.2f}% planned risk",
             help="Adverse percentage move from planned entry to stop. The estimated loss also depends on position size and can differ from real fills."
         )
+        t3.markdown(percentage_indicator_html(-price_pcts["risk_pct"], movement=price_plan["stop"] - price_plan["entry"], label=f"-{price_pcts['risk_pct']:.2f}% planned risk"), unsafe_allow_html=True)
         h1, h2 = st.columns(2)
         hourly_directional_pct = directional_price_move_pct(price, sig["hourly_target"], price_plan_side)
         daily_directional_pct = directional_price_move_pct(price, sig["daily_target"], price_plan_side)
         h1.metric(
             "1H Directional Projection",
             f"${sig['hourly_target']:,.{ticker_digits}f}",
-            f"{hourly_directional_pct:+.2f}% favorable-side move",
             help="Estimated one-hour volatility projection. A positive percentage means movement in the selected LONG/SHORT direction; this is not a forecast."
         )
+        h1.markdown(percentage_indicator_html(hourly_directional_pct, movement=sig["hourly_target"] - price, label=f"{hourly_directional_pct:+.2f}% favorable-side move"), unsafe_allow_html=True)
         h2.metric(
             "Daily Directional Projection",
             f"${sig['daily_target']:,.{ticker_digits}f}",
-            f"{daily_directional_pct:+.2f}% favorable-side move",
             help=f"Estimated directional move from the current quote. Reference range: ${sig['daily_range'][0]:,.{ticker_digits}f} to ${sig['daily_range'][1]:,.{ticker_digits}f}. This is not a forecast."
         )
+        h2.markdown(percentage_indicator_html(daily_directional_pct, movement=sig["daily_target"] - price, label=f"{daily_directional_pct:+.2f}% favorable-side move"), unsafe_allow_html=True)
+        st.caption("Arrow guide: ↑ price/return moving up · ↓ moving down · → nearly flat (within 0.05%). A ↓ arrow can still show a positive reward on a SHORT plan. Win-rate and AI-estimate percentages describe past patterns, not price direction.")
         if sig.get("side") == "None":
             st.caption("No confirmed directional setup. The entry/stop/target values above are a reference plan based on the stronger score, not a trade signal.")
 
@@ -2104,53 +2190,64 @@ def render_dashboard():
 
         # The glossary changes with the experience-level switch, so terms gain depth in Pro mode.
         if dash_mode == "Beginner (Simple)":
-            with st.expander("👶 Beginner's Guide: What each term means", expanded=False):
+            with st.expander("👶 Beginner's Guide: Plain-English definitions", expanded=False):
                 st.markdown("""
-- **Ticker / Symbol**: The short code used to identify an asset. For example, AAPL is Apple and BTC-USD is Bitcoin priced in US dollars.
-- **Current Price / Quote**: The latest available price from the data provider. Quotes can be delayed or temporarily unavailable.
-- **Candle / Timeframe**: One candle summarizes price movement over a set period, such as 5 minutes or 1 hour. Shorter timeframes are faster but noisier.
-- **VWAP (Volume-Weighted Average Price)**: An average traded price that gives more weight to periods with more volume. Price above it can support a bullish reading; below it can support a bearish reading.
-- **RSI (Relative Strength Index)**: A momentum gauge from 0 to 100. Readings above 70 are often called overbought and below 30 oversold, but neither guarantees a reversal.
-- **EMA 9 / EMA 20 (Moving Averages)**: Smooth price lines. EMA 9 reacts faster; when it is above EMA 20, short-term momentum may be upward.
-- **ATR (Average True Range)**: A measure of how much price has been moving. It measures volatility, not direction.
-- **Volume / Volume vs. Average**: How much was traded. Comparing current volume with its recent average helps show whether activity is stronger or weaker than usual.
-- **Setup Score (0–5)**: Counts how many technical checks line up. A 4/5 score is not a 80% chance of winning.
-- **Trend Confirmation**: Checks whether another timeframe agrees with the selected chart's direction.
-- **LONG / Paper BUY**: A simulated position that benefits if the asset price rises.
-- **SHORT / Paper SHORT**: A simulated position that benefits if the asset price falls. Real short selling has extra borrow, margin and risk considerations.
-- **Entry Price**: The price used to start the simulated trade.
-- **Stop Loss**: The planned exit level if price moves against the idea. Actual market fills can differ from a stop level.
-- **Take Profit / Target**: The planned price where the simulation aims to take a gain.
-- **Entry % vs. Current**: How far the planned entry is from the latest quote. A minus sign means the entry is below the current price; a plus sign means it is above.
-- **Potential Reward %**: The favorable percentage move from entry to target. It is shown as positive for both LONG and SHORT plans; it is not the chance of reaching the target.
-- **Stop Risk %**: The adverse percentage move from entry to stop. The dollar risk also depends on how many shares or units are held.
-- **Reward-to-Risk (R/R)**: Potential reward divided by planned risk. A 2:1 setup targets two dollars for each dollar at risk; it does not mean a 2-in-1 chance of winning.
-- **Position Size (Shares / Units)**: How many shares or crypto units the calculator suggests, based on the risk budget and stop distance.
-- **Risk Per Trade**: The share of the paper account you plan to lose at most if the stop is reached.
-- **Paper Trading**: Practice trades using simulated money. No broker order is sent and results may differ from real fills.
-- **AI Paper-History Estimate**: A small experimental model's pattern estimate based on your closed paper trades. It is not a proven or calibrated probability.
-- **Crypto Pair**: A coin quoted against another asset. BTC-USD means one Bitcoin quoted in US dollars; crypto trades 24/7.
+- **Ticker / Symbol**: A short name for a stock or coin. AAPL means Apple; BTC-USD means Bitcoin priced in US dollars.
+- **Current Price**: The latest price the app can find. It may be delayed, so it might not be the exact price you could trade at.
+- **Candle**: One bar on the chart. It shows where price started, where it went, and where it finished during that time.
+- **Timeframe**: How long each candle covers. A 5-minute chart makes one candle for every five minutes.
+- **VWAP**: An average price for the session that gives more weight to times when more shares or coins traded. Price above it can mean buyers are stronger; below it can mean sellers are stronger.
+- **RSI**: A speed gauge for price moves. A high reading means price has risen quickly; a low reading means it has fallen quickly. It does not tell you exactly when price will turn.
+- **EMA 9 / EMA 20**: Two smooth lines on the chart. The 9 line reacts faster. If it is above the 20 line, the recent move is leaning upward.
+- **ATR**: A guide to how much the price usually moves. A bigger ATR means bigger swings; it does not say whether price will rise or fall.
+- **Volume**: How many shares or coins were traded. More volume means more trading activity.
+- **Volume vs. Average**: Compares today's candle volume with its usual amount. Above 1.0x means more activity than average.
+- **Setup Score (0–5)**: Counts how many of the app's five checks agree. A score of 4 does not mean an 80% chance of winning.
+- **Trend Confirmation**: Checks a second chart timeframe to see whether it points in the same direction.
+- **LONG / Paper BUY**: A practice trade that makes money if the price goes up, before costs.
+- **SHORT / Paper SHORT**: A practice trade that makes money if the price goes down, before costs. Real short selling can have extra costs and risks.
+- **Entry Price**: The price where the practice trade starts.
+- **Stop Loss**: The price where you plan to exit if the trade goes against you. A real trade may fill at a different price.
+- **Take Profit / Target**: The price where you plan to take the gain if the trade moves your way.
+- **Entry % vs. Current**: How far the planned entry is from the price shown now. The arrow shows whether that entry is higher, lower or about the same.
+- **Potential Reward %**: How far the target is from the entry, as a percentage. This shows the size of the possible move, not the chance it will happen.
+- **Stop Risk %**: How far the stop is from the entry, as a percentage. Your dollar loss also depends on how many shares or coins you hold.
+- **Reward-to-Risk (R/R)**: Compares the possible gain with the planned loss. 2:1 means the target is twice as far from entry as the stop is.
+- **Position Size**: How many shares or coins the calculator suggests for the risk setting you chose.
+- **Risk Per Trade**: The amount of your practice account you are willing to risk on one trade if the stop is reached.
+- **Paper Trading**: Practice trading with pretend money. It does not send an order to a broker.
+- **Paper Account Balance**: The pretend money you start with in the practice account.
+- **Portfolio Equity**: Your paper balance after adding the results of closed trades and the current estimated results of open trades.
+- **Realized P&L**: The profit or loss from practice trades you have closed.
+- **Unrealized P&L**: The estimated profit or loss on trades that are still open. It can change as the price moves.
+- **Win Rate**: The percentage of closed practice trades that made money. A break-even trade is still included in the total number of trades.
+- **Trade Return %**: How big the gain or loss was compared with the amount used to open that practice trade.
+- **AI Paper-History Estimate**: A small model looking for patterns in your finished practice trades. It is still experimental and may be wrong.
+- **Crypto Pair**: A coin's price compared with another currency. BTC-USD is the Bitcoin price in US dollars. Crypto markets run all day and night.
+- **BUY / SELL Marker**: A chart label showing where the app's rules first changed to a buy or sell signal. It is a signal from the rules, not a promise about what price will do next.
+- **Up / Down / Neutral icon**: Up means the measured price or return is rising; down means it is falling; sideways means the move is very small (less than 0.05%).
                 """)
         else:
             with st.expander("📘 Advanced Reference: Definitions & Methodology", expanded=False):
                 st.markdown("""
-- **VWAP**: Cumulative sum of typical price × volume divided by cumulative volume for the session. It is a session benchmark, not intrinsic value.
-- **RSI (14)**: Exponentially smoothed average gains versus losses, transformed to a 0–100 oscillator. The 70/30 zones are heuristics, not standalone reversal triggers.
-- **EMA 9 / EMA 20**: Exponential moving averages with greater weight on recent observations. Their spread is used here as a short-horizon trend proxy.
-- **ATR (14)**: Smoothed True Range, where True Range is the maximum of high–low, |high–previous close| and |low–previous close|. ATR estimates volatility, not direction.
-- **Volume Ratio**: Current bar volume divided by its recent moving average. The scanner's volume check uses a threshold of 0.85×.
-- **Setup Score**: Five binary conditions: price/VWAP alignment, EMA alignment, price reclaim/EMA 9 confirmation, volume threshold and RSI range. Scores are rule confluence, not probabilities.
-- **Trend Confirmation**: EMA 9 versus EMA 20 on the independently selected confirmation interval. Divergence is a reason to reduce confidence or wait.
-- **ATR Stop Distance**: The quick calculator uses the larger of 1.25× ATR or 0.25% of price to establish a volatility-aware stop gap.
-- **Position Sizing**: Quantity is constrained by risk budget ÷ entry-to-stop distance and by account buying power. Stocks are whole shares; crypto permits fractional units.
-- **Reward-to-Risk**: Absolute entry-to-target distance divided by entry-to-stop distance, before spread, commission, slippage, borrow fees or taxes.
-- **Entry Gap %**: (planned entry ÷ current quote − 1) × 100. It is signed to show whether the planned entry is above or below the live reference quote.
-- **Potential Reward %**: Directional entry-to-target distance ÷ entry × 100. It is positive when the plan's target is favorable for its LONG or SHORT side; it is not a probability.
-- **Stop Risk %**: Directional entry-to-stop distance ÷ entry × 100. This is a price-risk percentage, not the account-risk percentage.
-- **Paper Trade Return %**: Direction-adjusted P&L ÷ (entry × shares/units) × 100. **Portfolio Return %** instead uses (paper equity ÷ paper starting balance − 1) × 100.
-- **AI Pattern Estimate**: Logistic-model output from closed paper trades with saved entry snapshots. The in-session training sample is small and not out-of-sample calibrated; do not treat it as a forecast.
+- **VWAP**: Plain meaning: the session average price, giving more weight to busy periods. Technical detail: cumulative typical price × volume ÷ cumulative volume; it is a benchmark, not intrinsic value.
+- **RSI (14)**: Plain meaning: a gauge of how quickly price has been moving. Technical detail: smoothed average gains versus losses, scaled from 0–100; 70/30 are guideposts, not automatic reversal signals.
+- **EMA 9 / EMA 20**: Plain meaning: two smooth price lines; the 9 line reacts faster. Technical detail: exponential moving averages weight recent prices more heavily; their gap is used as a short-term trend clue.
+- **ATR (14)**: Plain meaning: how much price has been swinging. Technical detail: a smoothed True Range using the largest of high–low, high–previous close, or low–previous close; it measures movement size, not direction.
+- **Volume Ratio**: Plain meaning: whether this candle is busier than usual. Technical detail: current bar volume ÷ recent moving average; the scanner checks for at least 0.85×.
+- **Setup Score**: Plain meaning: how many of five checks agree. Technical detail: price/VWAP, EMA alignment, price reclaim/EMA 9, volume threshold and RSI range; it is not a probability.
+- **Trend Confirmation**: Plain meaning: check a second chart interval for agreement. Technical detail: compare EMA 9 with EMA 20 on the separately selected timeframe; disagreement is a reason to be cautious.
+- **ATR Stop Distance**: Plain meaning: give the stop some room for normal price swings. Technical detail: the calculator uses the larger of 1.25× ATR or 0.25% of price.
+- **Position Sizing**: Plain meaning: decide how many shares or coins fit your risk limit. Technical detail: quantity is limited by risk budget ÷ entry-to-stop distance and account buying power; stocks use whole shares, crypto can be fractional.
+- **Reward-to-Risk**: Plain meaning: compare the possible gain with the planned loss. Technical detail: entry-to-target distance ÷ entry-to-stop distance, before trading costs, slippage, borrow fees or taxes.
+- **Entry Gap %**: Plain meaning: how far the planned entry is from the current quote. Technical detail: (planned entry ÷ current quote − 1) × 100; positive means above, negative means below.
+- **Potential Reward %**: Plain meaning: the size of the planned favorable move. Technical detail: direction-adjusted entry-to-target distance ÷ entry × 100; it is not the chance of reaching the target.
+- **Stop Risk %**: Plain meaning: how far away the protective stop is. Technical detail: direction-adjusted entry-to-stop distance ÷ entry × 100; this is not the percentage of the whole account at risk.
+- **Paper Trade Return %**: Plain meaning: the gain or loss on one practice trade compared with its entry value. Technical detail: direction-adjusted P&L ÷ (entry × shares/units) × 100. Portfolio return instead compares total paper equity with the starting balance.
+- **AI Pattern Estimate**: Plain meaning: a pattern score learned from your completed practice trades. Technical detail: logistic-model output from saved entry snapshots; the sample is small and not independently calibrated, so it is not a forecast.
 - **Historical Practice Replay**: One hypothetical entry on a historical candle, followed by a fixed number of candles. If a bar touches both stop and target, the simulator assumes the stop occurs first.
-- **Data Limitations**: Yahoo Finance intervals, screeners and quotes may be delayed, missing or rate-limited. Results may vary by market session and asset.
+- **Data Limitations**: Plain meaning: prices or charts may be late or incomplete. Technical detail: Yahoo Finance intervals, screeners and quotes may be delayed, missing or rate-limited.
+- **Percentage Direction Icons**: ↑ means up, ↓ means down, and → means nearly flat (within 0.05%). The arrow shows price/return direction, not whether a LONG or SHORT trade is profitable.
                 """)
 
         if dash_mode == "Beginner (Simple)":
@@ -2474,7 +2571,8 @@ def render_dashboard():
 
         p1, p2, p3, p4, p5 = st.columns(5)
         p1.metric("Paper Starting Balance", f"${st.session_state.account_size:,.2f}")
-        p2.metric("Paper Portfolio Equity", f"${portfolio_equity:,.2f}", f"{total_return:+.2f}% vs start")
+        p2.metric("Paper Portfolio Equity", f"${portfolio_equity:,.2f}")
+        p2.markdown(percentage_indicator_html(total_return, label=f"{total_return:+.2f}% vs start"), unsafe_allow_html=True)
         p3.metric("Realized P&L", f"${realized_pnl:+,.2f}")
         p4.metric("Open P&L", f"${unrealized_pnl:+,.2f}")
         p5.metric("Open Positions", str(len(open_trades)))
@@ -2539,13 +2637,15 @@ def render_dashboard():
                     h2.metric("Entry / Mark", f"${float(trade['entry']):,.{digits}f}", f"Mark ${live_px:,.{digits}f}")
                     h3.metric("Stop / Target", f"${float(trade['stop']):,.{digits}f}", f"Target ${float(trade['target']):,.{digits}f}")
                     open_return_pct = paper_trade_return_pct(unrealized, trade["entry"], trade["shares"])
-                    open_return_delta = f"{open_return_pct:+.2f}% on entry value" if open_return_pct is not None else "Return % unavailable"
                     h4.metric(
                         "Unrealized P&L",
                         f"${unrealized:+,.2f}",
-                        open_return_delta,
                         help="Estimated open profit/loss. Return % = unrealized P&L divided by entry price × shares/units; LONG and SHORT P&L are direction-adjusted."
                     )
+                    if open_return_pct is not None:
+                        h4.markdown(percentage_indicator_html(open_return_pct, label=f"{open_return_pct:+.2f}% on entry value"), unsafe_allow_html=True)
+                    else:
+                        h4.caption("Return % unavailable")
                     if stop_hit:
                         st.warning("The latest available price has crossed your stop level. Review the quote and close the simulation if appropriate.")
                     elif target_hit:
@@ -2591,6 +2691,7 @@ def render_dashboard():
             a3.metric("Average Winner", f"${avg_win:+,.2f}")
             a4.metric("Average Loser", f"${avg_loss:+,.2f}")
             a5.metric("Average Trade Return", f"{avg_trade_return:+.2f}%", help="Arithmetic average of each closed trade's P&L divided by its entry notional. This is not portfolio return.")
+            a5.markdown(percentage_indicator_html(avg_trade_return, label=f"{avg_trade_return:+.2f}% average"), unsafe_allow_html=True)
             cdf["cumulative_pnl"] = cdf["pnl"].cumsum()
             eq = px.line(cdf, x="closed_at" if "closed_at" in cdf else "time", y="cumulative_pnl", title="Cumulative Realized P&L", markers=True)
             eq.update_layout(paper_bgcolor="#131722", plot_bgcolor="#1e222d", font=dict(color="#e0e5ee", family="Arial, sans-serif", size=13), height=340, margin=dict(l=14, r=14, t=48, b=14), xaxis=dict(gridcolor="#2a2e39", tickfont=dict(color="#aeb8c8", size=12)), yaxis=dict(gridcolor="#2a2e39", tickfont=dict(color="#aeb8c8", size=12), title="P&L ($)"))
