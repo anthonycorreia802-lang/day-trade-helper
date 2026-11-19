@@ -1785,27 +1785,60 @@ hr {
 *::-webkit-scrollbar-thumb:hover { background: #3a4a63; }
 
 /* =========================================================
-   Uniform card spacing + modern type system
-   One gap value for all metric/card borders (H + V).
+   HYBRID THEME — TradeVue structure + Nordic calm
+   + soft Glass depth + light Terminal clarity
+   Simple for beginners. Functions unchanged.
    ========================================================= */
 :root {
-  --card-gap: 0.75rem;
+  --card-gap: 0.85rem;
   --font-sans: "Inter", "Segoe UI", "SF Pro Display", "SF Pro Text",
     -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Roboto Mono", ui-monospace,
     Menlo, Consolas, monospace;
+  --hx-bg: #10151e;
+  --hx-panel: #161d29;
+  --hx-border: #2c384c;
+  --hx-border-soft: #243041;
+  --hx-text: #e6ebf3;
+  --hx-strong: #f7f9fc;
+  --hx-muted: #9aa9bd;
+  --hx-blue: #4f8cff;
+  --hx-blue-soft: rgba(79, 140, 255, 0.14);
+  --hx-green: #3ecf8e;
+  --hx-green-soft: rgba(62, 207, 142, 0.12);
+  --hx-red: #f07178;
+  --hx-red-soft: rgba(240, 113, 120, 0.12);
+  --hx-amber: #e6c35c;
+  --hx-radius: 12px;
+  --hx-shadow: 0 4px 20px rgba(0, 0, 0, 0.22);
+  --hx-shadow-soft: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 28px rgba(0, 0, 0, 0.18);
 }
 
-/* Modern base type */
 html, body, .stApp,
 [data-testid="stAppViewContainer"],
 [data-testid="stMain"],
-[data-testid="stMainBlockContainer"],
-section[data-testid="stSidebar"] {
+[data-testid="stMainBlockContainer"] {
+  background: radial-gradient(1200px 600px at 18% -8%, #182131 0%, var(--hx-bg) 52%) !important;
+  color: var(--hx-text) !important;
   font-family: var(--font-sans) !important;
   -webkit-font-smoothing: antialiased !important;
   -moz-osx-font-smoothing: grayscale !important;
   text-rendering: optimizeLegibility !important;
+}
+section[data-testid="stSidebar"] {
+  font-family: var(--font-sans) !important;
+  background: linear-gradient(180deg, #141b27 0%, #121822 100%) !important;
+  border-right: 1px solid var(--hx-border-soft) !important;
+}
+header[data-testid="stHeader"] {
+  background: rgba(16, 21, 30, 0.92) !important;
+  border-bottom: 1px solid var(--hx-border-soft) !important;
+  backdrop-filter: blur(12px);
+}
+.block-container {
+  max-width: 1680px !important;
+  padding-top: 1.15rem !important;
+  padding-bottom: 2.6rem !important;
 }
 
 h1, h2, h3, h4, h5, h6,
@@ -1816,10 +1849,11 @@ h1, h2, h3, h4, h5, h6,
   font-family: var(--font-sans) !important;
   font-weight: 650 !important;
   letter-spacing: -0.025em !important;
-  line-height: 1.28 !important;
+  line-height: 1.3 !important;
+  color: var(--hx-strong) !important;
 }
-h1 { font-size: clamp(1.5rem, 2.3vw, 1.9rem) !important; font-weight: 700 !important; }
-h2 { font-size: 1.28rem !important; }
+h1 { font-size: clamp(1.48rem, 2.2vw, 1.85rem) !important; font-weight: 700 !important; }
+h2 { font-size: 1.26rem !important; }
 h3 { font-size: 1.08rem !important; }
 h4 { font-size: 0.98rem !important; }
 
@@ -1830,17 +1864,17 @@ p, li, label, legend,
   font-family: var(--font-sans) !important;
   letter-spacing: -0.01em !important;
   line-height: 1.55 !important;
+  color: var(--hx-text) !important;
 }
-
 [data-testid="stCaptionContainer"],
 .stCaption,
 small {
   font-family: var(--font-sans) !important;
+  color: var(--hx-muted) !important;
   letter-spacing: 0.01em !important;
   line-height: 1.45 !important;
 }
 
-/* Numeric values: tabular, slightly tighter tracking */
 .terminal-pct-value,
 [data-testid="stMetric"] [data-testid="stMetricValue"],
 .priority-buy-card .priority-buy-level b,
@@ -1849,45 +1883,68 @@ small {
   font-feature-settings: "tnum" 1, "lnum" 1 !important;
   letter-spacing: -0.02em !important;
 }
-
-.terminal-pct-label,
-[data-testid="stMetric"] [data-testid="stMetricLabel"],
-.pct-indicator {
-  font-family: var(--font-sans) !important;
-  letter-spacing: 0.015em !important;
-}
-
 .stButton > button,
 .stDownloadButton > button,
 [data-testid="stFormSubmitButton"] > button,
-[data-testid="stLinkButton"] > a {
-  font-family: var(--font-sans) !important;
-  letter-spacing: -0.01em !important;
-}
-
+[data-testid="stLinkButton"] > a,
 .stTextInput input, .stNumberInput input, .stTextArea textarea,
 [data-baseweb="input"] input, [data-baseweb="select"] > div {
   font-family: var(--font-sans) !important;
   letter-spacing: -0.01em !important;
 }
 
-/* ---- Uniform gap between every card border ---- */
+/* Hero — soft glass, short intro */
+.terminal-hero {
+  background: linear-gradient(135deg, rgba(30, 40, 56, 0.95) 0%, rgba(20, 27, 38, 0.98) 100%) !important;
+  border: 1px solid var(--hx-border) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--hx-shadow-soft) !important;
+  padding: 1.1rem 1.3rem !important;
+}
+.terminal-kicker {
+  color: #8fa3bc !important;
+  letter-spacing: 0.12em !important;
+  font-size: 0.7rem !important;
+}
+
+/* Signal banners — soft status colors */
+.action-banner {
+  border-radius: 12px !important;
+  font-weight: 720 !important;
+  letter-spacing: 0.02em !important;
+  padding: 14px 18px !important;
+  margin: 0.8rem 0 1.15rem !important;
+}
+.action-banner.buy {
+  background: var(--hx-green-soft) !important;
+  border: 1px solid rgba(62, 207, 142, 0.4) !important;
+  color: #5ddeb0 !important;
+}
+.action-banner.short {
+  background: var(--hx-red-soft) !important;
+  border: 1px solid rgba(240, 113, 120, 0.4) !important;
+  color: #ff8f96 !important;
+}
+.action-banner.watch {
+  background: var(--hx-blue-soft) !important;
+  border: 1px solid rgba(79, 140, 255, 0.4) !important;
+  color: #9bb8ff !important;
+}
+
+/* Uniform card gap (same H + V) */
 [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
   column-gap: var(--card-gap) !important;
   row-gap: var(--card-gap) !important;
 }
-/* Consecutive card rows: same gap as horizontal (no extra / uneven margin) */
 [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) + [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) {
   margin-top: 0 !important;
 }
-/* Still give AI expander a calm breath after the 3 cards */
 [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) + [data-testid="stExpander"] {
-  margin-top: 1.1rem !important;
+  margin-top: 1.15rem !important;
 }
 [data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] {
   gap: var(--card-gap);
 }
-/* When Streamlit stacks columns, keep the same gap */
 @media (max-width: 1100px) {
   div[data-testid="stHorizontalBlock"] {
     column-gap: var(--card-gap) !important;
@@ -1896,12 +1953,12 @@ small {
 }
 @media (max-width: 700px) {
   [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
-    column-gap: 0.65rem !important;
-    row-gap: 0.65rem !important;
+    column-gap: 0.7rem !important;
+    row-gap: 0.7rem !important;
   }
 }
 
-/* Shared card chrome so every tile feels from the same set */
+/* Cards — glass-lite, same family */
 .terminal-pct-card,
 [data-testid="stMetric"],
 [data-testid="stVerticalBlockBorderWrapper"],
@@ -1910,29 +1967,119 @@ small {
 .paper-empty-state,
 .readable-alert,
 .terminal-notice {
-  border-radius: 10px !important;
+  border-radius: var(--hx-radius) !important;
 }
 .terminal-pct-card,
 [data-testid="stMetric"] {
-  border: 1px solid #2f3d52 !important;
-  background: linear-gradient(165deg, #1a2332 0%, #141c28 100%) !important;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2) !important;
+  background: linear-gradient(165deg, rgba(30, 40, 56, 0.92) 0%, rgba(20, 28, 40, 0.96) 100%) !important;
+  border: 1px solid var(--hx-border) !important;
+  box-shadow: var(--hx-shadow) !important;
 }
 .terminal-pct-card:hover,
 [data-testid="stMetric"]:hover {
-  border-color: #425872 !important;
+  border-color: #3d516c !important;
 }
-
-/* Labels slightly softer; values slightly brighter */
-.terminal-pct-label {
-  color: #94a6bd !important;
-  font-size: 12px !important;
+.terminal-pct-label,
+[data-testid="stMetric"] [data-testid="stMetricLabel"] {
+  color: var(--hx-muted) !important;
+  font-size: 12.5px !important;
   font-weight: 550 !important;
 }
-.terminal-pct-value {
-  color: #f3f6fb !important;
+.terminal-pct-value,
+[data-testid="stMetric"] [data-testid="stMetricValue"] {
+  color: var(--hx-strong) !important;
   font-weight: 680 !important;
-  font-size: clamp(1.15rem, 1.7vw, 1.55rem) !important;
+  font-size: clamp(1.12rem, 1.65vw, 1.5rem) !important;
+}
+
+/* Soft direction pills */
+.pct-up {
+  color: #5ddeb0 !important;
+  background: var(--hx-green-soft) !important;
+  border-color: rgba(62, 207, 142, 0.35) !important;
+}
+.pct-down {
+  color: #ff8f96 !important;
+  background: var(--hx-red-soft) !important;
+  border-color: rgba(240, 113, 120, 0.35) !important;
+}
+.pct-neutral {
+  color: #c5d0e0 !important;
+  background: rgba(154, 169, 189, 0.12) !important;
+  border-color: rgba(154, 169, 189, 0.28) !important;
+}
+
+/* Primary actions — clear for beginners */
+.stButton > button[kind="primary"],
+[data-testid="stBaseButton-primary"] {
+  background: linear-gradient(180deg, #5a92ff 0%, #3d74e8 100%) !important;
+  border: 1px solid #7aa8ff !important;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+  border-radius: 10px !important;
+  box-shadow: 0 3px 12px rgba(61, 116, 232, 0.25) !important;
+  font-weight: 650 !important;
+}
+.stButton > button,
+.stDownloadButton > button {
+  border-radius: 10px !important;
+  background: #1c2535 !important;
+  border: 1px solid var(--hx-border) !important;
+  color: var(--hx-text) !important;
+  -webkit-text-fill-color: var(--hx-text) !important;
+}
+
+/* Active watchlist — obvious without noise */
+section[data-testid="stSidebar"] .stButton > button[kind="primary"],
+section[data-testid="stSidebar"] [data-testid="stBaseButton-primary"] {
+  background: linear-gradient(90deg, rgba(79, 140, 255, 0.22) 0%, rgba(79, 140, 255, 0.1) 100%) !important;
+  border: 1px solid #6b9dff !important;
+  box-shadow: inset 3px 0 0 #4f8cff, 0 2px 10px rgba(79, 140, 255, 0.12) !important;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+/* Chart + expanders + notices */
+div[data-testid="stPlotlyChart"] {
+  border: 1px solid var(--hx-border-soft) !important;
+  border-radius: 14px !important;
+  background: #121822 !important;
+  box-shadow: var(--hx-shadow) !important;
+  overflow: hidden !important;
+}
+[data-testid="stExpander"] {
+  background: var(--hx-panel) !important;
+  border: 1px solid var(--hx-border) !important;
+  border-radius: 12px !important;
+}
+[data-testid="stExpander"] summary {
+  color: var(--hx-strong) !important;
+  -webkit-text-fill-color: var(--hx-strong) !important;
+  font-weight: 620 !important;
+}
+.terminal-notice {
+  background: #1a2435 !important;
+  border: 1px solid #334866 !important;
+  border-left: 3px solid #7aa8ff !important;
+  border-radius: 11px !important;
+}
+.terminal-notice-learning {
+  background: #2a2618 !important;
+  border-left-color: var(--hx-amber) !important;
+}
+.educational-disclaimer {
+  background: var(--hx-panel) !important;
+  border: 1px solid var(--hx-border) !important;
+  border-left: 3px solid var(--hx-amber) !important;
+  border-radius: 12px !important;
+}
+.educational-disclaimer .disclaimer-heading {
+  color: #edd78a !important;
+  -webkit-text-fill-color: #edd78a !important;
+}
+.section-accent {
+  background: linear-gradient(180deg, #7eb0ff 0%, #4f8cff 100%) !important;
+  box-shadow: 0 0 10px rgba(79, 140, 255, 0.22) !important;
 }
 
 /* ---------- Section accent bars on major headings ---------- */
