@@ -928,6 +928,67 @@ div[data-testid="column"] [data-testid="stVerticalBlock"] {
 .readable-alert-title { font-size:14px; line-height:1.4; font-weight:800; margin:0 0 3px; color:#f4f7fc !important; }
 .readable-alert-copy { font-size:13px; line-height:1.55; color:#c6d1e0 !important; overflow-wrap:anywhere; }
 
+
+/* Percentage metric: keep the indicator attached to the card's top border. */
+.terminal-pct-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 104px;
+  margin: 0;
+  padding: 29px 15px 13px;
+  border: 1px solid #3b4d66;
+  border-radius: 9px;
+  background: linear-gradient(145deg, #202a3b 0%, #1b2230 100%);
+  box-shadow: 0 3px 12px rgba(0,0,0,.14);
+  box-sizing: border-box;
+}
+.terminal-pct-badge {
+  position: absolute;
+  top: 0;
+  right: 14px;
+  max-width: calc(100% - 28px);
+  transform: translateY(-50%);
+  line-height: 1;
+  z-index: 2;
+}
+.terminal-pct-badge .pct-indicator {
+  display: inline-flex;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 9px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.24);
+  font-size: 12px !important;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.terminal-pct-label {
+  min-width: 0;
+  margin: 0 0 6px;
+  color: #aebbd0 !important;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.terminal-pct-value {
+  min-width: 0;
+  color: #f0f4fb !important;
+  font-size: clamp(19px, 2vw, 27px);
+  font-weight: 650;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .terminal-pct-card { min-height: 100px; padding: 27px 10px 11px; }
+  .terminal-pct-badge { right: 8px; max-width: calc(100% - 16px); }
+  .terminal-pct-badge .pct-indicator { font-size: 11px !important; padding: 4px 7px; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1184,12 +1245,23 @@ def percentage_indicator_html(value, movement=None, label=None, neutral_threshol
 
 
 def render_percentage_metric(column, label, value, indicator_html, help_text=None):
-    """Render a metric and its related percentage inside one polished card."""
+    """Render the value and its percentage badge in one self-contained card.
+
+    A single HTML card avoids Streamlit placing the percentage markdown in a
+    separate block below the bordered metric container on some versions.
+    """
+    safe_label = html.escape(str(label))
+    safe_value = html.escape(str(value))
+    safe_help = html.escape(str(help_text or ""), quote=True)
     with column:
-        with st.container(border=True):
-            st.markdown('<span class="pct-card-marker"></span>', unsafe_allow_html=True)
-            st.metric(label, value, help=help_text)
-            st.markdown(indicator_html, unsafe_allow_html=True)
+        st.markdown(
+            '<div class="terminal-pct-card" title="' + safe_help + '">'
+            '<div class="terminal-pct-badge">' + indicator_html + '</div>'
+            '<div class="terminal-pct-label">' + safe_label + '</div>'
+            '<div class="terminal-pct-value">' + safe_value + '</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_standard_metric(column, label, value, delta=None, help_text=None):
