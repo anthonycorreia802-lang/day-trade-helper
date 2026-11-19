@@ -446,7 +446,7 @@ div[data-testid="stPlotlyChart"] {
 .short { background:rgba(242,54,69,.15); color:#ff6b78; border:1px solid rgba(242,54,69,.55); }
 .watch { background:rgba(41,98,255,.13); color:#83a7ff; border:1px solid rgba(41,98,255,.5); }
 @media (max-width: 1100px) {
-  div[data-testid="stHorizontalBlock"] { flex-wrap:wrap; gap:.7rem; }
+  div[data-testid="stHorizontalBlock"] { flex-wrap:wrap; column-gap:0.5rem; row-gap:0.45rem; }
   div[data-testid="column"] { min-width:min(100%,220px) !important; }
 }
 @media (max-width: 700px) {
@@ -1181,12 +1181,20 @@ div[data-testid="column"] [data-testid="stVerticalBlock"] {
 }
 [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
   align-items: stretch !important;
-  column-gap: 1rem !important;
+  column-gap: 0.55rem !important;
+  row-gap: 0.45rem !important;
 }
 [data-testid="stMainBlockContainer"] [data-testid="column"] {
   min-width: 0 !important;
 }
 
+/* Keep metric card markdown from adding phantom bottom space inside columns. */
+[data-testid="stMainBlockContainer"] [data-testid="column"]:has(.terminal-pct-card) [data-testid="stMarkdownContainer"],
+[data-testid="stMainBlockContainer"] [data-testid="column"]:has(.terminal-pct-card) [data-testid="stMarkdownContainer"] > div,
+[data-testid="stMainBlockContainer"] [data-testid="column"]:has(.terminal-pct-card) [data-testid="stMarkdownContainer"] p {
+  margin: 0 !important;
+  padding: 0 !important;
+}
 /* The five Paper Desk summary tiles all use the same custom card renderer. */
 .terminal-pct-card {
   min-height: 116px !important;
@@ -1235,10 +1243,18 @@ div[data-testid="column"] [data-testid="stVerticalBlock"] {
 
 /* Consistent vertical rhythm between dashboard sections, forms, charts and tables. */
 [data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] {
-  gap: .8rem;
+  gap: 0.55rem;
 }
 [data-testid="stExpander"] {
-  margin: 2px 0 8px !important;
+  margin: 0.35rem 0 0.55rem !important;
+}
+/* Live Price Targets: clear vertical space between the 3-card row and the 2 projection cards. */
+[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) + [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) {
+  margin-top: 0.85rem !important;
+}
+/* AI Analysis: more breathing room between the 3 assessment cards and "Why the AI assessment looks this way". */
+[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) + [data-testid="stExpander"] {
+  margin-top: 1rem !important;
 }
 [data-testid="stDataFrame"],
 [data-testid="stDataEditor"],
@@ -1265,7 +1281,8 @@ div[data-testid="stPlotlyChart"] {
     padding: .85rem .75rem 1.5rem !important;
   }
   [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
-    gap: .65rem !important;
+    column-gap: 0.45rem !important;
+    row-gap: 0.4rem !important;
   }
   .terminal-pct-card {
     min-height: 104px !important;
