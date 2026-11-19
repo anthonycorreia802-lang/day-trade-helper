@@ -872,6 +872,16 @@ div[data-testid="column"] [data-testid="stVerticalBlock"] {
   .priority-buy-card .priority-buy-level b { font-size: 12px; }
 }
 
+
+/* Readable persistent alerts: dark surfaces, high-contrast text, and no toast timeout. */
+.readable-alert-stack { display:flex; flex-direction:column; gap:9px; margin:8px 0 12px; }
+.readable-alert { width:100%; box-sizing:border-box; padding:12px 14px; border:1px solid #40516b; border-left:4px solid #6fa8ff; border-radius:9px; background:#202b3b !important; color:#e8eef8 !important; box-shadow:0 4px 14px rgba(0,0,0,.18); }
+.readable-alert * { color:inherit !important; -webkit-text-fill-color:inherit !important; }
+.readable-alert.alert-buy { border-left-color:#20b486; background:#172d2a !important; border-color:#315b50; }
+.readable-alert.alert-signal { border-left-color:#6fa8ff; background:#202b3b !important; }
+.readable-alert-title { font-size:14px; line-height:1.4; font-weight:800; margin:0 0 3px; color:#f4f7fc !important; }
+.readable-alert-copy { font-size:13px; line-height:1.55; color:#c6d1e0 !important; overflow-wrap:anywhere; }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1720,6 +1730,35 @@ def buy_alert_dedupe_key(row, trading_horizon):
     return f"{str(trading_horizon).strip()}:{symbol}:{side}"
 
 
+def queue_readable_alert(title, message, kind="signal", key=None):
+    """Keep alerts visible in the dashboard until the user dismisses them."""
+    alerts = list(st.session_state.get("readable_alerts", []))
+    alert_key = str(key or f"{kind}:{title}:{message}")
+    if not any(item.get("key") == alert_key for item in alerts):
+        alerts.append({"key": alert_key, "title": str(title), "message": str(message), "kind": kind})
+    st.session_state["readable_alerts"] = alerts[-8:]
+
+
+def render_readable_alerts():
+    """Render high-contrast persistent alerts with a user-controlled dismiss action."""
+    alerts = st.session_state.get("readable_alerts", [])
+    if not alerts:
+        return
+    blocks = []
+    for item in alerts:
+        kind = "alert-buy" if item.get("kind") == "buy" else "alert-signal"
+        blocks.append(
+            f'<div class="readable-alert {kind}">'
+            f'<div class="readable-alert-title">{html.escape(item.get("title", "Trading alert"))}</div>'
+            f'<div class="readable-alert-copy">{html.escape(item.get("message", ""))}</div>'
+            f'</div>'
+        )
+    st.markdown('<div class="readable-alert-stack">' + ''.join(blocks) + '</div>', unsafe_allow_html=True)
+    if st.button("Dismiss alerts", key="dismiss_readable_alerts", help="Clear the visible alerts"):
+        st.session_state["readable_alerts"] = []
+        st.rerun()
+
+
 # ---------- Session State ----------
 defaults = {
     "watchlist": ["SPY", "QQQ", "AAPL", "TSLA", "NVDA", "BTC-USD", "ETH-USD"],
@@ -1729,6 +1768,7 @@ defaults = {
     "daily_loss_limit": 300.0,
     "last_alert_action": None,
     "alerted_buy_signal_keys": [],
+    "readable_alerts": [],
     "market_scan_cursor": 0,
     "recommendation_pool_size": 0,
     "ai_min_learning_samples": 20
@@ -2233,7 +2273,12 @@ def render_top_market_candidates(compact=False):
         st.session_state["alerted_buy_signal_keys"] = seen_keys[-200:]
         if new_alerts:
             names = ", ".join(row["Symbol"] for row in new_alerts[:3])
-            st.toast(f"New {trading_horizon} buy setup: {names}", icon="🟢")
+            queue_readable_alert(
+                f"New {trading_horizon} priority buy setup",
+                f"Qualified bullish candidates: {names}. Review entry, stop, target and current market conditions before acting.",
+                kind="buy",
+                key=f"priority:{trading_horizon}:{'|'.join(row['Symbol'] for row in new_alerts[:3])}",
+            )
         if not priority_buys:
             st.info("No stocks or crypto currently meet all priority-buy checks. The scanner will keep looking.")
         for rank, row in enumerate(priority_buys, start=1):
@@ -2485,7 +2530,12 @@ def render_dashboard():
         if confirmed_horizon_signal:
             alert_key = f"selected:{trading_horizon}:{ticker}:{sig['side']}"
             if st.session_state.last_alert_action != alert_key:
-                st.toast(f"{trading_horizon} signal on {ticker}: {sig['action']} @ ${price:,.{price_decimals(price)}f}", icon="⚡")
+                queue_readable_alert(
+                    f"{trading_horizon} signal · {ticker}",
+                    f"{sig['action']} at ${price:,.{price_decimals(price)}f}. Review the chart, entry and risk levels before placing a trade.",
+                    kind="signal",
+                    key=alert_key,
+                )
                 st.session_state.last_alert_action = alert_key
 
         last_bar_time = df.index[-1]
@@ -3286,6 +3336,7 @@ st.markdown("""
 
 st.markdown("---")
 render_dashboard()
+render_readable_alerts()
 
 st.markdown("""
 <div class="educational-disclaimer">
