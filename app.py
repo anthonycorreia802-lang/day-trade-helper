@@ -3757,7 +3757,7 @@ def render_top_market_candidates(compact=False):
                 key=f"priority:{trading_horizon}:{'|'.join(row['Symbol'] for row in new_alerts[:3])}",
             )
         if not priority_buys:
-            st.info("No stocks or crypto currently meet all priority-buy checks. The scanner will keep looking.")
+            render_terminal_notice("No stocks or crypto currently meet all priority-buy checks. The scanner will keep looking.", kind="info")
         for rank, row in enumerate(priority_buys, start=1):
             digits = price_decimals(row["Price"])
             entry = float(row["Entry"])
@@ -3778,6 +3778,26 @@ def render_top_market_candidates(compact=False):
                 f'<div class="priority-buy-level"><small style="color:#aeb8c8">Target · +{reward_pct:.1f}%</small><b>${target:,.{digits}f}</b></div>'
                 f'</div></div>', unsafe_allow_html=True
             )
+        # Place the loader directly beneath Priority buy alerts. When alerts exist,
+        # the choices are restricted to those exact alert symbols; otherwise fall
+        # back to the current scan results so the control remains useful.
+        load_rows = priority_buys if priority_buys else candidates
+        load_symbols = list(dict.fromkeys(row["Symbol"] for row in load_rows))
+        if load_symbols:
+            load_by_symbol = {row["Symbol"]: row for row in load_rows}
+            st.markdown("#### 📥 Load a selected stock / crypto")
+            chosen = st.selectbox(
+                "Choose from the priority alerts" if priority_buys else "Choose from current market candidates",
+                load_symbols,
+                key="top_candidate_pick_sidebar",
+                format_func=lambda symbol: (
+                    f"{load_by_symbol[symbol]['Asset Name']} · {symbol} · {load_by_symbol[symbol]['Asset Type']}"
+                ),
+            )
+            if st.button("Load selected stock / crypto", key="top_candidate_load_sidebar", use_container_width=True):
+                st.session_state.active_ticker = chosen
+                st.rerun()
+
         # Keep a broader discovery shortlist separate from the stricter alert board.
         # This restores the compact suggested-assets list without changing the rest of the sidebar.
         suggested = [
@@ -3816,11 +3836,6 @@ def render_top_market_candidates(compact=False):
         else:
             st.info("No bullish shortlist is available yet. The scanner will add ideas as fresh results arrive.")
 
-        choices = [row["Symbol"] for row in priority_buys] or [row["Symbol"] for row in candidates]
-        chosen = st.selectbox("Load candidate", choices, key="top_candidate_pick_sidebar")
-        if st.button("Load selected candidate", key="top_candidate_load_sidebar", use_container_width=True):
-            st.session_state.active_ticker = chosen
-            st.rerun()
         st.caption("These are rule-based watchlist candidates, not automatic orders or guaranteed profitable trades.")
         return
 
