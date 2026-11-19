@@ -1243,27 +1243,108 @@ div[data-testid="column"] [data-testid="stVerticalBlock"] {
 
 /* Consistent vertical rhythm between dashboard sections, forms, charts and tables. */
 [data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] {
-  gap: 0.55rem;
+  gap: 0.7rem;
 }
 [data-testid="stExpander"] {
-  margin: 0.35rem 0 0.55rem !important;
+  margin: 0.45rem 0 0.7rem !important;
 }
-/* Live Price Targets: clear vertical space between the 3-card row and the 2 projection cards. */
+/* Live Price Targets: professional vertical separation between entry row and projection row. */
 [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) + [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) {
-  margin-top: 0.85rem !important;
+  margin-top: 0.95rem !important;
 }
-/* AI Analysis: more breathing room between the 3 assessment cards and "Why the AI assessment looks this way". */
+/* AI Analysis: clear, calm space between the 3 assessment cards and the explanation expander. */
 [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"]:has(.terminal-pct-card) + [data-testid="stExpander"] {
-  margin-top: 1rem !important;
+  margin-top: 1.15rem !important;
 }
 [data-testid="stDataFrame"],
 [data-testid="stDataEditor"],
 div[data-testid="stPlotlyChart"] {
-  margin-top: 5px !important;
-  margin-bottom: 9px !important;
+  margin-top: 0.4rem !important;
+  margin-bottom: 0.7rem !important;
 }
 [data-testid="stAlert"] {
-  margin: 5px 0 !important;
+  margin: 0.4rem 0 !important;
+}
+
+/* ---------- Professional spacing & polish pass (CSS only) ---------- */
+/* Section headings: quieter top, slightly more air below into content. */
+[data-testid="stMainBlockContainer"] h2,
+[data-testid="stMainBlockContainer"] h3,
+[data-testid="stMainBlockContainer"] h4 {
+  margin-top: 0.85rem !important;
+  margin-bottom: 0.65rem !important;
+  letter-spacing: -0.02em !important;
+}
+[data-testid="stMainBlockContainer"] h2:first-child,
+[data-testid="stMainBlockContainer"] h3:first-child {
+  margin-top: 0.25rem !important;
+}
+
+/* Captions under metrics / sections sit closer to their parent block. */
+[data-testid="stMainBlockContainer"] [data-testid="stCaptionContainer"] {
+  margin-top: 0.2rem !important;
+  margin-bottom: 0.35rem !important;
+}
+
+/* Metric card grid: balanced horizontal gap, stronger vertical row separation. */
+[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
+  column-gap: 0.75rem !important;
+  row-gap: 0.75rem !important;
+}
+
+/* Soften card edges and unify shadow so the board feels one product. */
+.terminal-pct-card {
+  border: 1px solid #3a4a63 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18) !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+.terminal-pct-card:hover {
+  border-color: #526480 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22) !important;
+}
+
+/* Action banner: a bit more presence without looking loud. */
+.action-banner {
+  margin: 0.75rem 0 1.1rem !important;
+  padding: 14px 18px !important;
+  border-radius: 9px !important;
+  letter-spacing: 0.03em !important;
+}
+
+/* Hero and horizontal rules: calmer page breaks. */
+.terminal-hero {
+  margin: 0.2rem 0 1rem !important;
+  padding: 1rem 1.2rem !important;
+  border-radius: 10px !important;
+}
+hr {
+  margin: 1.15rem 0 !important;
+  opacity: 0.9;
+}
+
+/* Expander surfaces match the card system more closely. */
+[data-testid="stExpander"] {
+  border-radius: 10px !important;
+  border-color: #354154 !important;
+  background: #1b2230 !important;
+}
+[data-testid="stExpander"] summary {
+  padding-top: 0.7rem !important;
+  padding-bottom: 0.7rem !important;
+}
+
+/* Native Streamlit metrics: align height language with custom cards. */
+[data-testid="stMetric"] {
+  border-radius: 9px !important;
+  padding: 13px 14px !important;
+}
+
+/* Disclaimer: slightly more air so it reads as a footer panel, not body text. */
+.educational-disclaimer {
+  margin-top: 1.35rem !important;
+  margin-bottom: 1.75rem !important;
+  padding: 1.1rem 1.2rem !important;
 }
 
 /* Avoid squeezed five-column cards on tablets; Streamlit stacks columns on phones. */
@@ -1301,7 +1382,7 @@ def info_heading(label, explanation, level=3):
     """Render a compact heading with a hover-only explanation icon."""
     safe_label = str(label).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     safe_tip = str(explanation).replace('&', '&amp;').replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
-    st.markdown(f'<h{level} style="margin:.35rem 0 .55rem">{safe_label}<span class="info-tip" title="{safe_tip}" aria-label="More information">i</span></h{level}>', unsafe_allow_html=True)
+    st.markdown(f'<h{level} style="margin:.7rem 0 .65rem">{safe_label}<span class="info-tip" title="{safe_tip}" aria-label="More information">i</span></h{level}>', unsafe_allow_html=True)
 
 
 def render_terminal_notice(message, kind="info"):
