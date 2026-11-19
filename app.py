@@ -2222,6 +2222,89 @@ section[data-testid="stSidebar"] h4 {
   font-size: 0.95rem !important;
 }
 
+
+
+/* Live Price Targets & Trade Zones — one consistent card grid.
+   Scoped to this section so other dashboard cards keep their existing styling. */
+.st-key-live_price_targets [data-testid="stHorizontalBlock"] {
+  display: flex !important;
+  align-items: stretch !important;
+  column-gap: 16px !important;
+  row-gap: 16px !important;
+}
+.st-key-live_price_targets [data-testid="column"] {
+  min-width: 0 !important;
+  padding: 0 !important;
+}
+.st-key-live_price_targets .terminal-pct-card {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 126px !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 39px 15px 14px !important;
+  border: 1px solid #40516a !important;
+  border-radius: 10px !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+}
+.st-key-live_price_targets .terminal-pct-badge {
+  position: absolute !important;
+  top: 8px !important;
+  right: 12px !important;
+  left: auto !important;
+  max-width: calc(100% - 24px) !important;
+  transform: none !important;
+  line-height: 1.2 !important;
+}
+.st-key-live_price_targets .terminal-pct-badge .pct-indicator {
+  display: inline-flex !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 4px 8px !important;
+  font-size: 11.5px !important;
+  line-height: 1.25 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  box-shadow: none !important;
+}
+.st-key-live_price_targets .terminal-pct-label {
+  margin: 0 0 8px !important;
+  min-height: 17px !important;
+  line-height: 1.35 !important;
+}
+.st-key-live_price_targets .terminal-pct-value {
+  line-height: 1.25 !important;
+  overflow-wrap: anywhere !important;
+}
+/* Explicitly separate the projection row from the entry / target / stop row. */
+.st-key-live_price_targets [data-testid="stHorizontalBlock"] + [data-testid="stHorizontalBlock"] {
+  margin-top: 16px !important;
+}
+@media (max-width: 700px) {
+  .st-key-live_price_targets [data-testid="stHorizontalBlock"] {
+    column-gap: 10px !important;
+    row-gap: 12px !important;
+  }
+  .st-key-live_price_targets .terminal-pct-card {
+    min-height: 118px !important;
+    padding: 36px 10px 12px !important;
+  }
+  .st-key-live_price_targets .terminal-pct-badge {
+    top: 7px !important;
+    right: 8px !important;
+    max-width: calc(100% - 16px) !important;
+  }
+  .st-key-live_price_targets .terminal-pct-badge .pct-indicator {
+    font-size: 10.5px !important;
+    padding: 4px 6px !important;
+  }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -4082,50 +4165,51 @@ def render_dashboard():
             ac3.metric(f"{sig['trend_fast_name']} / {sig['trend_slow_name']} Spread", f"${sig['trend_fast'] - sig['trend_slow']:+,.{ticker_digits}f}", help="Distance between the two trend averages used for the selected trading horizon.")
             ac4.metric("Recent High / Low", f"${df.tail(45)['High'].max():,.{ticker_digits}f} / ${df.tail(45)['Low'].min():,.{ticker_digits}f}", help="Highest and lowest prices in the most recent 45 candles on the selected timeframe.")
 
-        info_heading("🎯 Live Price Targets & Trade Zones", "Entry gap is measured from the current quote. Target reward and stop risk are measured from the planned entry; reward stays positive for a valid SHORT target below entry.", 4)
-        price_plan_side = sig["side"] if sig.get("side") in {"LONG", "SHORT"} else ("LONG" if sig["long_score"] >= sig["short_score"] else "SHORT")
-        price_plan = build_quick_trade_plan(
-            sig, price, max(float(sig["stop_dist"]), price * 0.0025, 0.000001),
-            rr_ratio, price_plan_side, ticker_digits
-        )
-        price_pcts = calculate_directional_percentages(
-            price, price_plan["entry"], price_plan["stop"], price_plan["target"], price_plan_side
-        )
-        t1, t2, t3 = st.columns(3)
-        render_percentage_metric(
-            t1, f"Planned Entry ({price_plan_side})", f"${price_plan['entry']:,.{ticker_digits}f}",
-            percentage_indicator_html(price_pcts["entry_vs_current_pct"], label=f"{price_pcts['entry_vs_current_pct']:+.2f}% vs current"),
-            help_text="The entry level for the stronger current technical side. The percentage compares this entry price with the latest quote; negative means below the quote and positive means above it.",
-        )
-        render_percentage_metric(
-            t2, "Profit Target", f"${price_plan['target']:,.{ticker_digits}f}",
-            percentage_indicator_html(price_pcts["reward_pct"], movement=price_plan["target"] - price_plan["entry"], label=f"+{price_pcts['reward_pct']:.2f}% potential reward"),
-            help_text="Favorable percentage move from planned entry to target. It is positive for both LONG and SHORT plans and is not a probability of reaching the target.",
-        )
-        render_percentage_metric(
-            t3, "Stop Loss", f"${price_plan['stop']:,.{ticker_digits}f}",
-            percentage_indicator_html(-price_pcts["risk_pct"], movement=price_plan["stop"] - price_plan["entry"], label=f"-{price_pcts['risk_pct']:.2f}% planned risk"),
-            help_text="Adverse percentage move from planned entry to stop. The estimated loss also depends on position size and can differ from real fills.",
-        )
-        h1, h2 = st.columns(2)
-        projection_one = float(sig["projection_one_target"])
-        projection_two = float(sig["projection_two_target"])
-        projection_one_pct = directional_price_move_pct(price, projection_one, price_plan_side)
-        projection_two_pct = directional_price_move_pct(price, projection_two, price_plan_side)
-        projection_help = "Volatility-based scenario using the selected chart interval and recent ATR. It is a planning reference, not a price forecast."
-        render_percentage_metric(
-            h1, sig["projection_one_label"], f"${projection_one:,.{ticker_digits}f}",
-            percentage_indicator_html(projection_one_pct, movement=projection_one - price, label=f"{projection_one_pct:+.2f}% scenario"),
-            help_text=projection_help,
-        )
-        render_percentage_metric(
-            h2, sig["projection_two_label"], f"${projection_two:,.{ticker_digits}f}",
-            percentage_indicator_html(projection_two_pct, movement=projection_two - price, label=f"{projection_two_pct:+.2f}% scenario"),
-            help_text=f"Longer-range volatility scenario. Recent daily reference range: ${sig['daily_range'][0]:,.{ticker_digits}f} to ${sig['daily_range'][1]:,.{ticker_digits}f}. This is not a forecast.",
-        )
-        st.caption("Arrow guide: ↑ price/return moving up · ↓ moving down · → nearly flat (within 0.05%). A ↓ arrow can still show a positive reward on a SHORT plan. Win-rate and AI percentages describe past patterns, not future certainty.")
-        if sig.get("side") == "None":
-            st.caption("No confirmed directional setup. The entry/stop/target values above are a reference plan based on the stronger score, not a trade signal.")
+        with st.container(key="live_price_targets"):
+            info_heading("🎯 Live Price Targets & Trade Zones", "Entry gap is measured from the current quote. Target reward and stop risk are measured from the planned entry; reward stays positive for a valid SHORT target below entry.", 4)
+            price_plan_side = sig["side"] if sig.get("side") in {"LONG", "SHORT"} else ("LONG" if sig["long_score"] >= sig["short_score"] else "SHORT")
+            price_plan = build_quick_trade_plan(
+                sig, price, max(float(sig["stop_dist"]), price * 0.0025, 0.000001),
+                rr_ratio, price_plan_side, ticker_digits
+            )
+            price_pcts = calculate_directional_percentages(
+                price, price_plan["entry"], price_plan["stop"], price_plan["target"], price_plan_side
+            )
+            t1, t2, t3 = st.columns(3)
+            render_percentage_metric(
+                t1, f"Planned Entry ({price_plan_side})", f"${price_plan['entry']:,.{ticker_digits}f}",
+                percentage_indicator_html(price_pcts["entry_vs_current_pct"], label=f"{price_pcts['entry_vs_current_pct']:+.2f}% vs current"),
+                help_text="The entry level for the stronger current technical side. The percentage compares this entry price with the latest quote; negative means below the quote and positive means above it.",
+            )
+            render_percentage_metric(
+                t2, "Profit Target", f"${price_plan['target']:,.{ticker_digits}f}",
+                percentage_indicator_html(price_pcts["reward_pct"], movement=price_plan["target"] - price_plan["entry"], label=f"+{price_pcts['reward_pct']:.2f}% potential reward"),
+                help_text="Favorable percentage move from planned entry to target. It is positive for both LONG and SHORT plans and is not a probability of reaching the target.",
+            )
+            render_percentage_metric(
+                t3, "Stop Loss", f"${price_plan['stop']:,.{ticker_digits}f}",
+                percentage_indicator_html(-price_pcts["risk_pct"], movement=price_plan["stop"] - price_plan["entry"], label=f"-{price_pcts['risk_pct']:.2f}% planned risk"),
+                help_text="Adverse percentage move from planned entry to stop. The estimated loss also depends on position size and can differ from real fills.",
+            )
+            h1, h2 = st.columns(2)
+            projection_one = float(sig["projection_one_target"])
+            projection_two = float(sig["projection_two_target"])
+            projection_one_pct = directional_price_move_pct(price, projection_one, price_plan_side)
+            projection_two_pct = directional_price_move_pct(price, projection_two, price_plan_side)
+            projection_help = "Volatility-based scenario using the selected chart interval and recent ATR. It is a planning reference, not a price forecast."
+            render_percentage_metric(
+                h1, sig["projection_one_label"], f"${projection_one:,.{ticker_digits}f}",
+                percentage_indicator_html(projection_one_pct, movement=projection_one - price, label=f"{projection_one_pct:+.2f}% scenario"),
+                help_text=projection_help,
+            )
+            render_percentage_metric(
+                h2, sig["projection_two_label"], f"${projection_two:,.{ticker_digits}f}",
+                percentage_indicator_html(projection_two_pct, movement=projection_two - price, label=f"{projection_two_pct:+.2f}% scenario"),
+                help_text=f"Longer-range volatility scenario. Recent daily reference range: ${sig['daily_range'][0]:,.{ticker_digits}f} to ${sig['daily_range'][1]:,.{ticker_digits}f}. This is not a forecast.",
+            )
+            st.caption("Arrow guide: ↑ price/return moving up · ↓ moving down · → nearly flat (within 0.05%). A ↓ arrow can still show a positive reward on a SHORT plan. Win-rate and AI percentages describe past patterns, not future certainty.")
+            if sig.get("side") == "None":
+                st.caption("No confirmed directional setup. The entry/stop/target values above are a reference plan based on the stronger score, not a trade signal.")
 
         info_heading("💡 Why this setup?", "A short explanation of which technical checks are supporting or weakening the current signal.", 4)
         for r in sig["reasons"]:
