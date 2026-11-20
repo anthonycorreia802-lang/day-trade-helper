@@ -4706,7 +4706,7 @@ def render_dashboard():
                     st.success(f"{manual_side} paper position saved for {manual_ticker}.")
                     st.rerun()
             if not valid_manual:
-                st.warning("Check your levels: LONG requires Stop < Entry < Target. SHORT requires Target < Entry < Stop.")
+                render_terminal_notice("Check your levels: LONG requires Stop < Entry < Target. SHORT requires Target < Entry < Stop.", kind="learning")
 
         if open_trades:
             info_heading("📂 Open Paper Positions", "Live/last-available mark, unrealized P&L and your planned stop/target. Enter an exit price to close and realize the simulated result.", 4)
